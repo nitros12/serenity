@@ -38,7 +38,8 @@ pub type BeforeHook = Fn(&mut Context, &Message, &str) -> bool + Send + Sync + '
 pub type AfterHook = Fn(&mut Context, &Message, &str, Result<(), Error>) + Send + Sync + 'static;
 pub type UnrecognisedCommandHook = Fn(&mut Context, &Message, &str) + Send + Sync + 'static;
 pub(crate) type InternalCommand = Arc<Command>;
-pub type PrefixCheck = Fn(&mut Context, &Message) -> Option<String> + Send + Sync + 'static;
+// pub type PrefixCheck = Fn(&mut Context, &Message) -> Option<String> + Send + Sync + 'static;
+pub type MultiPrefixCheck = Fn(&mut Context, &Message) -> Option<Vec<String>> + Send + Sync + 'static;
 
 pub enum CommandOrAlias {
     Alias(String),
@@ -319,7 +320,7 @@ impl Default for CommandOptions {
 }
 
 pub fn positions(ctx: &mut Context, msg: &Message, conf: &Configuration) -> Option<Vec<usize>> {
-    if !conf.prefixes.is_empty() || conf.dynamic_prefix.is_some() {
+    if !conf.prefixes.is_empty() || conf.dynamic_prefixes.is_some() {
         // Find out if they were mentioned. If not, determine if the prefix
         // was used. If not, return None.
         let mut positions: Vec<usize> = vec![];
@@ -327,10 +328,12 @@ pub fn positions(ctx: &mut Context, msg: &Message, conf: &Configuration) -> Opti
         if let Some(mention_end) = find_mention_end(&msg.content, conf) {
             positions.push(mention_end);
             return Some(positions);
-        } else if let Some(ref func) = conf.dynamic_prefix {
+        } else if let Some(ref func) = conf.dynamic_prefixes {
             if let Some(x) = func(ctx, msg) {
-                if msg.content.starts_with(&x) {
-                    positions.push(x.chars().count());
+                for n in &x {
+                    if msg.content.starts_with(n) {
+                        positions.push(n.chars().count());
+                    }
                 }
             } else {
                 for n in &conf.prefixes {

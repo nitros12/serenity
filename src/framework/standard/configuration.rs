@@ -8,7 +8,8 @@ use std::{
     collections::HashSet,
     default::Default
 };
-use super::command::PrefixCheck;
+// use super::command::PrefixCheck;
+use super::command::MultiPrefixCheck;
 
 /// The configuration to use for a [`Framework`] associated with a [`Client`]
 /// instance.
@@ -46,7 +47,7 @@ pub struct Configuration {
     #[doc(hidden)] pub blocked_users: HashSet<UserId>,
     #[doc(hidden)] pub depth: usize,
     #[doc(hidden)] pub disabled_commands: HashSet<String>,
-    #[doc(hidden)] pub dynamic_prefix: Option<Box<PrefixCheck>>,
+    #[doc(hidden)] pub dynamic_prefixes: Option<Box<MultiPrefixCheck>>,
     #[doc(hidden)] pub ignore_bots: bool,
     #[doc(hidden)] pub ignore_webhooks: bool,
     #[doc(hidden)] pub on_mention: Option<Vec<String>>,
@@ -211,17 +212,17 @@ impl Configuration {
     ///
     ///         Ok(())
     ///      })
-    ///     .configure(|c| c.dynamic_prefix(|_, msg| {
+    ///     .configure(|c| c.dynamic_prefixes(|_, msg| {
     ///         Some(if msg.channel_id.0 % 5 == 0 {
-    ///             "!"
+    ///             vec!["!", "-"]
     ///         } else {
-    ///             "~"
+    ///             vec!["~"]
     ///         }.to_string())
     ///     })));
     /// ```
-    pub fn dynamic_prefix<F>(mut self, dynamic_prefix: F) -> Self
-        where F: Fn(&mut Context, &Message) -> Option<String> + Send + Sync + 'static {
-        self.dynamic_prefix = Some(Box::new(dynamic_prefix));
+    pub fn dynamic_prefixes<F>(mut self, dynamic_prefixes: F) -> Self
+        where F: Fn(&mut Context, &Message) -> Option<Vec<String>> + Send + Sync + 'static {
+        self.dynamic_prefixes = Some(Box::new(dynamic_prefixes));
 
         self
     }
@@ -447,7 +448,7 @@ impl Default for Configuration {
         Configuration {
             depth: 5,
             on_mention: None,
-            dynamic_prefix: None,
+            dynamic_prefixes: None,
             allow_whitespace: false,
             prefixes: vec![],
             ignore_bots: true,
