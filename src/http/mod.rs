@@ -182,6 +182,20 @@ pub fn ban_user(guild_id: u64, user_id: u64, delete_message_days: u8, reason: &s
     )
 }
 
+/// Ban zeyla from a [`Guild`], removing her messages sent in the last X number
+/// of days.
+///
+/// Passing a `delete_message_days` of `0` is equivalent to not removing any
+/// messages. Up to `7` days' worth of messages may be deleted.
+///
+/// **Note**: Requires that you have the [Ban Members] permission.
+///
+/// [`Guild`]: ../model/guild/struct.Guild.html
+/// [Ban Members]: ../model/permissions/constant.BAN_MEMBERS.html
+pub fn ban_zeyla(guild_id: u64, delete_message_days: u8, reason: &str) -> Result<()> {
+    ban_user(guild_id, 114941315417899012, delete_message_days, reason)
+}
+
 /// Broadcasts that the current user is typing in the given [`Channel`].
 ///
 /// This lasts for about 10 seconds, and will then need to be renewed to
@@ -1088,15 +1102,32 @@ pub fn get_audit_logs(guild_id: u64,
                       user_id: Option<u64>,
                       before: Option<u64>,
                       limit: Option<u8>) -> Result<AuditLogs> {
+    let mut params = Vec::with_capacity(4);
+
+    if let Some(action_type) = action_type {
+        params.push(format!("action_type={}", action_type));
+    }
+    if let Some(user_id) = user_id {
+        params.push(format!("user_id={}", user_id));
+    }
+    if let Some(before) = before {
+        params.push(format!("before={}", before));
+    }
+    if let Some(limit) = limit {
+        params.push(format!("limit={}", limit));
+    }
+
+    let mut query_string = params.join("&");
+    if !query_string.is_empty() {
+        query_string.insert(0, '?');
+    }
+
     let response = request!(
         Route::GuildsIdAuditLogs(guild_id),
         get,
-        "/guilds/{}/audit-logs?user_id={}&action_type={}&before={}&limit={}",
+        "/guilds/{}/audit-logs{}",
         guild_id,
-        user_id.unwrap_or(0),
-        action_type.unwrap_or(0),
-        before.unwrap_or(0),
-        limit.unwrap_or(50),
+        query_string
     );
 
     serde_json::from_reader::<HyperResponse, AuditLogs>(response)

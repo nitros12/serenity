@@ -57,10 +57,6 @@ pub fn vecmap_to_json_map<K: PartialEq + ToString>(map: VecMap<K, Value>) -> Map
 /// This checks that the name is either `"nsfw"` or, for names longer than that,
 /// is prefixed with `"nsfw"`.
 ///
-/// **Note**: Whether a channel is NSFW is done client-side, as a field for the
-/// NSFW-ness of a channel is not sent to clients. Discord's requirements for
-/// defining a channel as NSFW can change at any time.
-///
 /// # Examples
 ///
 /// Check that a channel named `"nsfw"` is in fact NSFW:
@@ -154,7 +150,7 @@ pub fn parse_invite(code: &str) -> &str {
     }
 }
 
-/// Retreives an Id from a user mention.
+/// Retrieves an Id from a user mention.
 ///
 /// If the mention is invalid, then `None` is returned.
 ///
@@ -198,7 +194,7 @@ pub fn parse_username(mention: &str) -> Option<u64> {
     }
 }
 
-/// Retreives an Id from a role mention.
+/// Retrieves an Id from a role mention.
 ///
 /// If the mention is invalid, then `None` is returned.
 ///
@@ -234,7 +230,7 @@ pub fn parse_role(mention: &str) -> Option<u64> {
     }
 }
 
-/// Retreives an Id from a channel mention.
+/// Retrieves an Id from a channel mention.
 ///
 /// If the channel mention is invalid, then `None` is returned.
 ///
@@ -271,7 +267,7 @@ pub fn parse_channel(mention: &str) -> Option<u64> {
     }
 }
 
-/// Retreives the name and Id from an emoji mention, in the form of an
+/// Retrieves the name and Id from an emoji mention, in the form of an
 /// `EmojiIdentifier`.
 ///
 /// If the emoji usage is invalid, then `None` is returned.
