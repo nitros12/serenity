@@ -9,6 +9,7 @@ use std::{
     default::Default,
     sync::Arc,
 };
+use parking_lot::RwLock;
 // use super::command::PrefixCheck;
 use super::command::MultiPrefixCheck;
 
@@ -222,7 +223,7 @@ impl Configuration {
     ///     })));
     /// ```
     pub fn dynamic_prefixes<F>(mut self, dynamic_prefixes: F) -> Self
-        where F: Fn(&mut Context, &Message) -> Option<Arc<Vec<String>>> + Send + Sync + 'static {
+        where F: Fn(&mut Context, &Message) -> Option<Arc<RwLock<Vec<String>>>> + Send + Sync + 'static {
         self.dynamic_prefixes = Some(Box::new(dynamic_prefixes));
 
         self

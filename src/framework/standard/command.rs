@@ -7,10 +7,11 @@ use std::{
     collections::HashMap,
     fmt,
     fmt::{Debug, Formatter},
-    sync::Arc
+    sync::Arc,
 };
 use utils::Colour;
 use super::{Args, Configuration, HelpBehaviour};
+use parking_lot::RwLock;
 
 pub type Check = Fn(&mut Context, &Message, &mut Args, &CommandOptions) -> bool
                      + Send
@@ -39,7 +40,7 @@ pub type AfterHook = Fn(&mut Context, &Message, &str, Result<(), Error>) + Send 
 pub type UnrecognisedCommandHook = Fn(&mut Context, &Message, &str) + Send + Sync + 'static;
 pub(crate) type InternalCommand = Arc<Command>;
 // pub type PrefixCheck = Fn(&mut Context, &Message) -> Option<String> + Send + Sync + 'static;
-pub type MultiPrefixCheck = Fn(&mut Context, &Message) -> Option<Arc<Vec<String>>> + Send + Sync + 'static;
+pub type MultiPrefixCheck = Fn(&mut Context, &Message) -> Option<Arc<RwLock<Vec<String>>>> + Send + Sync + 'static;
 
 pub enum CommandOrAlias {
     Alias(String),
@@ -330,7 +331,7 @@ pub fn positions(ctx: &mut Context, msg: &Message, conf: &Configuration) -> Opti
             return Some(positions);
         } else if let Some(ref func) = conf.dynamic_prefixes {
             if let Some(x) = func(ctx, msg) {
-                for n in x.iter() {
+                for n in x.read().iter() {
                     if msg.content.starts_with(n) {
                         positions.push(n.chars().count());
                     }
