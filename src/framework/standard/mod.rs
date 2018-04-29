@@ -10,18 +10,18 @@ mod buckets;
 mod args;
 
 pub use self::args::{
-    Args, 
-    Iter, 
+    Args,
+    Iter,
     Error as ArgError
 };
 pub(crate) use self::buckets::{Bucket, Ratelimit};
 pub(crate) use self::command::Help;
 pub use self::command::{
-    HelpFunction, 
-    HelpOptions, 
-    Command, 
-    CommandGroup, 
-    CommandOptions, 
+    HelpFunction,
+    HelpOptions,
+    Command,
+    CommandGroup,
+    CommandOptions,
     Error as CommandError
 };
 pub use self::command::CommandOrAlias;
@@ -317,7 +317,7 @@ impl StandardFramework {
                     delay,
                     limit: Some((time_span, limit)),
                 },
-                users: HashMap::new(),
+                guilds: HashMap::new(),
                 check: None,
             },
         );
@@ -376,7 +376,7 @@ impl StandardFramework {
                     delay,
                     limit: Some((time_span, limit)),
                 },
-                users: HashMap::new(),
+                guilds: HashMap::new(),
                 check: Some(Box::new(check)),
             },
         );
@@ -426,7 +426,7 @@ impl StandardFramework {
                     delay,
                     limit: Some((time_span, limit)),
                 },
-                users: HashMap::new(),
+                guilds: HashMap::new(),
                 check: Some(Box::new(check)),
             },
         );
@@ -463,7 +463,7 @@ impl StandardFramework {
                     delay,
                     limit: None,
                 },
-                users: HashMap::new(),
+                guilds: HashMap::new(),
                 check: None,
             },
         );
@@ -508,7 +508,10 @@ impl StandardFramework {
         } else {
             if let Some(ref bucket) = command.bucket {
                 if let Some(ref mut bucket) = self.buckets.get_mut(bucket) {
-                    let rate_limit = bucket.take(message.author.id.0);
+
+                    let guild_or_channel_id = message.guild_id().map_or(message.channel_id.0, |g| g.0);
+
+                    let rate_limit = bucket.take(guild_or_channel_id);
                     match bucket.check {
                         Some(ref check) => {
                             let apply = feature_cache! {{
@@ -927,7 +930,7 @@ impl StandardFramework {
     /// Sets what code should be executed when a user sends `(prefix)help`.
     ///
     /// If a command named `help` was set with [`command`], then this takes precendence first.
-    /// 
+    ///
     /// [`command`]: #method.command
     pub fn help(mut self, f: HelpFunction) -> Self {
         let a = CreateHelpCommand(HelpOptions::default(), f).finish();
