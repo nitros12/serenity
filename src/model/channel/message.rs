@@ -512,7 +512,7 @@ impl Message {
         http::unpin_message(self.channel_id.0, self.id.0)
     }
 
-    pub(crate) fn check_content_length(map: &JsonMap) -> Result<()> {
+    pub fn check_content_length(map: &JsonMap) -> Result<()> {
         if let Some(content) = map.get("content") {
             if let Value::String(ref content) = *content {
                 if let Some(length_over) = Message::overflow_length(content) {
@@ -524,7 +524,7 @@ impl Message {
         Ok(())
     }
 
-    pub(crate) fn check_embed_length(map: &JsonMap) -> Result<()> {
+    pub fn check_embed_length(map: &JsonMap) -> Result<()> {
         let embed = match map.get("embed") {
             Some(&Value::Object(ref value)) => value,
             _ => return Ok(()),
