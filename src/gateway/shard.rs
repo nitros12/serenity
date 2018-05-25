@@ -611,9 +611,11 @@ impl Shard {
                 self.shard_info,
             );
 
-            self.heusteric_events_received = false;
+            self.heusteric_events_received = true;
             return false;
         }
+
+        self.heusteric_events_received = false;
 
         // If the last heartbeat didn't receive an acknowledgement, then
         // auto-reconnect.
