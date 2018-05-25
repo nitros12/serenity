@@ -147,7 +147,7 @@ impl Shard {
         let heartbeat_instants = (None, None);
         let heartbeat_interval = None;
         let last_heartbeat_acknowledged = true;
-        let heusteric_events_received = false;
+        let heusteric_events_received = true;
         let seq = 0;
         let stage = ConnectionStage::Handshake;
         let session_id = None;
@@ -611,7 +611,7 @@ impl Shard {
                 self.shard_info,
             );
 
-            self.heusteric_events_received = true;
+            self.heusteric_events_received = false;
             return false;
         }
 
