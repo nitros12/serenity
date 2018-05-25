@@ -79,6 +79,9 @@ pub struct Shard {
     // This _must_ be set to `true` in `Shard::handle_event`'s
     // `Ok(GatewayEvent::HeartbeatAck)` arm.
     last_heartbeat_acknowledged: bool,
+    /// Because discord is shit, have a heusteric that makes the shard suicide
+    /// if no dispatch events have been seen since the last heartbeat
+    heusteric_events_received: bool,
     seq: u64,
     session_id: Option<String>,
     shard_info: [u64; 2],
@@ -144,6 +147,7 @@ impl Shard {
         let heartbeat_instants = (None, None);
         let heartbeat_interval = None;
         let last_heartbeat_acknowledged = true;
+        let heusteric_events_received = false;
         let seq = 0;
         let stage = ConnectionStage::Handshake;
         let session_id = None;
@@ -155,6 +159,7 @@ impl Shard {
             heartbeat_instants,
             heartbeat_interval,
             last_heartbeat_acknowledged,
+            heusteric_events_received,
             seq,
             stage,
             started: Instant::now(),
@@ -370,6 +375,8 @@ impl Shard {
                     warn!("[Shard {:?}] Sequence off; them: {}, us: {}", self.shard_info, seq, self.seq);
                 }
 
+                self.heusteric_events_received = true;
+
                 match *event {
                     Event::Ready(ref ready) => {
                         debug!("[Shard {:?}] Received Ready", self.shard_info);
@@ -573,6 +580,7 @@ impl Shard {
     /// `false` is returned under one of the following conditions:
     ///
     /// - a heartbeat acknowledgement was not received in time
+    /// - no dispatch events have been received since the last heartbeat
     /// - an error occurred while heartbeating
     pub fn check_heartbeat(&mut self) -> bool {
         let wait = {
@@ -592,6 +600,19 @@ impl Shard {
             if last_sent.elapsed() <= wait {
                 return true;
             }
+        }
+
+
+        // If the no dispatch events have been received since the past heartbeat,
+        // then auto-reconnect.
+        if !self.heusteric_events_received {
+            debug!(
+                "[Shard {:?}] No events received since last heartbeat",
+                self.shard_info,
+            );
+
+            self.heusteric_events_received = true;
+            return false;
         }
 
         // If the last heartbeat didn't receive an acknowledgement, then
