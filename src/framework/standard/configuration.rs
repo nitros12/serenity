@@ -2,7 +2,7 @@ use client::Context;
 use http;
 use model::{
     channel::Message,
-    id::{GuildId, UserId}
+    id::{ChannelId, GuildId, UserId}
 };
 use std::{
     collections::HashSet,
@@ -47,6 +47,7 @@ pub struct Configuration {
     #[doc(hidden)] pub allow_whitespace: bool,
     #[doc(hidden)] pub blocked_guilds: HashSet<GuildId>,
     #[doc(hidden)] pub blocked_users: HashSet<UserId>,
+    #[doc(hidden)] pub allowed_channels: HashSet<ChannelId>,
     #[doc(hidden)] pub depth: usize,
     #[doc(hidden)] pub disabled_commands: HashSet<String>,
     #[doc(hidden)] pub dynamic_prefixes: Option<Box<MultiPrefixCheck>>,
@@ -117,6 +118,30 @@ impl Configuration {
     /// ```
     pub fn blocked_guilds(mut self, guilds: HashSet<GuildId>) -> Self {
         self.blocked_guilds = guilds;
+
+        self
+    }
+
+    /// HashSet of channels Ids where commands will be working.
+    ///
+    /// # Examples
+    ///
+    /// Create a HashSet in-place:
+    ///
+    /// ```rust,no_run
+    /// # use serenity::prelude::*;
+    /// # struct Handler;
+    /// #
+    /// # impl EventHandler for Handler {}
+    /// # let mut client = Client::new("token", Handler).unwrap();
+    /// use serenity::model::id::ChannelId;
+    /// use serenity::framework::StandardFramework;
+    ///
+    /// client.with_framework(StandardFramework::new().configure(|c| c
+    ///     .allowed_channels(vec![ChannelId(7), ChannelId(77)].into_iter().collect())));
+    /// ```
+    pub fn allowed_channels(mut self, channels: HashSet<ChannelId>) -> Self {
+        self.allowed_channels = channels;
 
         self
     }
@@ -457,6 +482,7 @@ impl Default for Configuration {
             owners: HashSet::default(),
             blocked_users: HashSet::default(),
             blocked_guilds: HashSet::default(),
+            allowed_channels: HashSet::default(),
             disabled_commands: HashSet::default(),
             allow_dm: true,
             ignore_webhooks: true,
