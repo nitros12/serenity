@@ -1122,13 +1122,12 @@ impl Framework for StandardFramework {
             }
         }
 
-        let unrecognised_command = self.unrecognised_command.clone();
-
-        threadpool.execute(move || {
-            if let Some(unrecognised_command) = unrecognised_command {
+        if let Some(unrecognised_command) = &self.unrecognised_command {
+            let unrecognised_command = unrecognised_command.clone();
+            threadpool.execute(move || {
                 (unrecognised_command)(&mut context, &message, &unrecognised_command_name);
-            }
-        });
+            });
+        }
     }
 
     fn update_current_user(&mut self, user_id: UserId) {

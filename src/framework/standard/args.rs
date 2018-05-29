@@ -54,7 +54,7 @@ impl<E: StdError> fmt::Display for Error<E> {
 type Result<T, E> = ::std::result::Result<T, Error<E>>;
 
 fn second_quote_occurence(s: &str) -> Option<usize> {
-    s.chars().enumerate().filter(|&(_, c)| c == '"').nth(1).map(|(pos, _)| pos)
+    s.match_indices('"').nth(1).map(|(pos, _)| pos)
 }
 
 fn parse_quotes<T: FromStr>(s: &mut String, delimiters: &[String]) -> Result<T, T::Err>
@@ -94,56 +94,45 @@ fn parse<T: FromStr>(s: &mut String, delimiters: &[String]) -> Result<T, T::Err>
         return Err(Error::Eos);
     }
 
-    if delimiters.len() == 1 {
-        let delim = &delimiters[0];
-        let mut pos = s.find(delim).unwrap_or_else(|| s.len());
-        let res = (&s[..pos]).parse::<T>().map_err(Error::Parse)?;
+    let (mut smallest_pos, delimiter_len) = delimiters.iter().fold((s.len(), 0usize), |mut acc, delim| {
+        let other_pos = s.find(delim).unwrap_or_else(|| s.len());
 
-        if pos < s.len() {
-            pos += delim.len();
+        if acc.0 > other_pos {
+            acc.0 = other_pos;
+            acc.1 = delim.len();
         }
 
-        s.drain(..pos);
-        Ok(res)
-    } else {
-        let (mut smallest_pos, delimiter_len) = delimiters.iter().fold((s.len(), 0usize), |mut acc, delim| {
-            let other_pos = s.find(delim).unwrap_or_else(|| s.len());
+        acc
+    });
 
-            if acc.0 > other_pos {
-                acc.0 = other_pos;
-                acc.1 = delim.len();
-            }
+    let res = (&s[..smallest_pos]).parse::<T>().map_err(Error::Parse)?;
 
-            acc
-        });
-
-        let res = (&s[..smallest_pos]).parse::<T>().map_err(Error::Parse)?;
-
-        if smallest_pos < s.len() {
-            smallest_pos += delimiter_len;
-        }
-
-        s.drain(..smallest_pos);
-
-        Ok(res)
+    if smallest_pos < s.len() {
+        smallest_pos += delimiter_len;
     }
+
+    s.drain(..smallest_pos);
+
+    Ok(res)
 }
 
 /// A utility struct for handling arguments of a command.
 ///
 /// An "argument" is a part of the message up until the end of the message or at one of the specified delimiters.
-/// (E.g.: delim: " ", message: "ab cd"; 1th arg is "ab")
+/// For instance, with a space delimiter (" ") in a message like "ab cd", we would get the argument "ab", and then "cd".
 /// 
-/// The general functionality provided by this struct is to not only make arguments convenient to handle,
-/// but to handle parsing them to a specifc type as well.
-/// 
-/// Majority of the methods here remove the argument as to advance to further arguments.
-/// If you do not wish for this behaviour, use the suffixed `*_n` methods instead. 
-/// 
+/// For the most part, almost all methods provided by this struct not only make arguments convenient to handle,
+/// they'll also parse your argument to a specific type if you need to work with the type itself and not some shady string.
 ///
-/// `Args` provides parsing arguments inside quotes too (for which case, delimiters don't matter), via the suffixed `*_quoted` methods.
-///
-/// **Note**: these fall back to the normal methods' behaviour if the quotes are malformed; i.e missing an opening or closing quote.
+/// And for another part, in case you need multiple things, whether delimited or not, gobled in one argument,
+/// you can utilize the `*_quoted` methods that will extract anything inside quotes for you.
+/// Though they'll fall back to the original behaviour of, for example, `single`, 
+/// on the occasion that the quotes are malformed (missing a starting or ending quote).  
+///  
+/// # Catch regarding how `Args` functions
+/// 
+/// Majority of the methods here internally chop of the argument (i.e you won't encounter it anymore), to advance to further arguments.
+/// If you do not desire for this behaviour, consider using the suffixed `*_n` methods instead.
 #[derive(Clone, Debug)]
 pub struct Args {
     delimiters: Vec<String>,
@@ -554,15 +543,24 @@ impl Args {
         where T::Err: StdError {
         // TODO: Make this efficient
 
-        if self.delimiters.len() == 1 as usize {
-
+        if self.delimiters.len() == 1 {
             match self.message.split(&self.delimiters[0]).position(|e| e.parse::<T>().is_ok()) {
                 Some(index) => {
-                    let mut vec = self.message.split(self.delimiters[0].as_str()).map(|s| s.to_string()).collect::<Vec<_>>();
-                    let mut ss = vec.remove(index);
-                    let res = parse::<T>(&mut ss, &self.delimiters);
-                    self.message = vec.join(&self.delimiters[0]);
+                    fn do_stuff(msg: &str, delim: &str, index: usize) -> (String, String) {
+                        let mut vec = msg.split(delim).collect::<Vec<_>>();
+
+                        let found = vec.remove(index);
+                        let new_state = vec.join(delim);
+
+                        (found.to_string(), new_state)
+                    }
+
+                    let (mut s, msg) = do_stuff(&self.message, &self.delimiters[0], index);
+                    let res = parse::<T>(&mut s, &self.delimiters);
+                    self.message = msg;
+
                     if let Some(ref mut val) = self.len { if 1 <= *val { *val -= 1 } };
+
                     res
                 },
                 None => Err(Error::Eos),
@@ -617,9 +615,8 @@ impl Args {
 
             match pos {
                 Some(index) => {
-                    let mut vec = self.message.split(&self.delimiters[0]).map(|s| s.to_string()).collect::<Vec<_>>();
-                    let mut ss = vec.remove(index);
-                    parse::<T>(&mut ss, &self.delimiters)
+                    let ss = self.message.split(&self.delimiters[0]).nth(index).unwrap();
+                    parse::<T>(&mut ss.to_string(), &self.delimiters)
                 },
                 None => Err(Error::Eos),
             }
