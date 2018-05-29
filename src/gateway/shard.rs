@@ -375,8 +375,6 @@ impl Shard {
                     warn!("[Shard {:?}] Sequence off; them: {}, us: {}", self.shard_info, seq, self.seq);
                 }
 
-                self.heusteric_events_received = true;
-
                 match *event {
                     Event::Ready(ref ready) => {
                         debug!("[Shard {:?}] Received Ready", self.shard_info);
@@ -391,7 +389,10 @@ impl Shard {
                         self.last_heartbeat_acknowledged = true;
                         self.heartbeat_instants = (Some(Instant::now()), None);
                     },
-                    _ => {},
+                    _ => {
+                        // everything but resume and readies count as an event I guess
+                        self.heusteric_events_received = true;
+                    },
                 }
 
                 self.seq = seq;
