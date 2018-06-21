@@ -956,6 +956,7 @@ impl Framework for StandardFramework {
         mut context: Context,
         message: Message,
         threadpool: &ThreadPool,
+        dispatch_unrecognised: bool,
     ) {
         let res = command::positions(&mut context, &message, &self.configuration);
         let mut unrecognised_command_name = String::from("");
@@ -1096,6 +1097,10 @@ impl Framework for StandardFramework {
                     }
                 }
             }
+        }
+
+        if !dispatch_unrecognised {
+            return;
         }
 
         if let Some(unrecognised_command) = &self.unrecognised_command {

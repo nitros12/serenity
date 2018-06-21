@@ -75,7 +75,7 @@ use model::id::UserId;
 
 /// This trait allows for serenity to either use its builtin framework, or yours.
 pub trait Framework {
-    fn dispatch(&mut self, Context, Message, &ThreadPool);
+    fn dispatch(&mut self, Context, Message, &ThreadPool, bool);
 
     #[doc(hidden)]
     #[cfg(feature = "standard_framework")]
@@ -83,8 +83,8 @@ pub trait Framework {
 }
 
 impl<F: Framework + ?Sized> Framework for Box<F> {
-    fn dispatch(&mut self, ctx: Context, msg: Message, threadpool: &ThreadPool) {
-        (**self).dispatch(ctx, msg, threadpool);
+    fn dispatch(&mut self, ctx: Context, msg: Message, threadpool: &ThreadPool, dispatch_unrecognised: bool) {
+        (**self).dispatch(ctx, msg, threadpool, dispatch_unrecognised);
     }
 
     #[cfg(feature = "standard_framework")]
@@ -94,8 +94,8 @@ impl<F: Framework + ?Sized> Framework for Box<F> {
 }
 
 impl<'a, F: Framework + ?Sized> Framework for &'a mut F {
-    fn dispatch(&mut self, ctx: Context, msg: Message, threadpool: &ThreadPool) {
-        (**self).dispatch(ctx, msg, threadpool);
+    fn dispatch(&mut self, ctx: Context, msg: Message, threadpool: &ThreadPool, dispatch_unrecognised: bool) {
+        (**self).dispatch(ctx, msg, threadpool, dispatch_unrecognised);
     }
 
     #[cfg(feature = "standard_framework")]

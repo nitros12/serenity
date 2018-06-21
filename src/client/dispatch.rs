@@ -78,7 +78,7 @@ pub(crate) fn dispatch<H: EventHandler + Send + Sync + 'static>(
             );
 
             if let Some(ref mut framework) = *framework.lock() {
-                framework.dispatch(context, event.message, threadpool);
+                framework.dispatch(context, event.message, threadpool, true);
             }
         },
         other => handle_event(
