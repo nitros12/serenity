@@ -17,6 +17,7 @@ pub use self::args::{
 pub(crate) use self::buckets::{Bucket, Ratelimit};
 pub(crate) use self::command::Help;
 pub use self::command::{
+    Check,
     HelpFunction,
     HelpOptions,
     Command,
@@ -148,10 +149,11 @@ macro_rules! command {
 
 /// An enum representing all possible fail conditions under which a command won't
 /// be executed.
+#[derive(Debug)]
 pub enum DispatchError {
     /// When a custom function check has failed.
     //
-    // TODO: Bring back `Arc<Command>` as `CommandOptions` here somehow?
+    // TODO: Bring back `Arc<Command>` as `CommandOptions` in 0.6.x.
     CheckFailed,
     /// When the requested command is disabled in bot configuration.
     CommandDisabled(String),
@@ -185,32 +187,6 @@ pub enum DispatchError {
     IgnoredBot,
     /// When the bot ignores webhooks and a command was issued by one.
     WebhookAuthor,
-}
-
-use std::fmt;
-
-impl fmt::Debug for DispatchError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::DispatchError::*;
-
-        match *self {
-            CheckFailed => write!(f, "DispatchError::CheckFailed"),
-            CommandDisabled(ref s) => f.debug_tuple("DispatchError::CommandDisabled").field(&s).finish(),
-            BlockedUser => write!(f, "DispatchError::BlockedUser"),
-            BlockedGuild => write!(f, "DispatchError::BlockedGuild"),
-            BlockedChannel => write!(f, "DispatchError::BlockedChannel"),
-            LackOfPermissions(ref perms) => f.debug_tuple("DispatchError::LackOfPermissions").field(&perms).finish(),
-            RateLimited(ref num) => f.debug_tuple("DispatchError::RateLimited").field(&num).finish(),
-            OnlyForDM => write!(f, "DispatchError::OnlyForDM"),
-            OnlyForOwners => write!(f, "DispatchError::OnlyForOwners"),
-            OnlyForGuilds => write!(f, "DispatchError::OnlyForGuilds"),
-            LackingRole => write!(f, "DispatchError::LackingRole"),
-            NotEnoughArguments { ref min, ref given } => f.debug_struct("DispatchError::NotEnoughArguments").field("min", &min).field("given", &given).finish(),
-            TooManyArguments { ref max, ref given } => f.debug_struct("DispatchError::TooManyArguments").field("max", &max).field("given", &given).finish(),
-            IgnoredBot => write!(f, "DispatchError::IgnoredBot"),
-            WebhookAuthor => write!(f, "DispatchError::WebhookAuthor"),
-        }
-    }
 }
 
 type DispatchErrorHook = Fn(Context, Message, DispatchError) + Send + Sync + 'static;
@@ -520,35 +496,7 @@ impl StandardFramework {
             Some(DispatchError::IgnoredBot)
         } else if self.configuration.ignore_webhooks && message.webhook_id.is_some() {
             Some(DispatchError::WebhookAuthor)
-        } else if self.configuration.owners.contains(&message.author.id) {
-            None
         } else {
-            if let Some(ref bucket) = command.bucket {
-                if let Some(ref mut bucket) = self.buckets.get_mut(bucket) {
-
-                    let guild_or_channel_id = message.guild_id().map_or(message.channel_id.0, |g| g.0);
-
-                    let rate_limit = bucket.take(guild_or_channel_id);
-                    match bucket.check {
-                        Some(ref check) => {
-                            let apply = feature_cache! {{
-                                let guild_id = message.guild_id();
-                                (check)(context, guild_id, message.channel_id, message.author.id)
-                            } else {
-                                (check)(context, message.channel_id, message.author.id)
-                            }};
-
-                            if apply && rate_limit > 0i64 {
-                                return Some(DispatchError::RateLimited(rate_limit));
-                            }
-                        },
-                        None => if rate_limit > 0i64 {
-                            return Some(DispatchError::RateLimited(rate_limit));
-                        },
-                    }
-                }
-            }
-
             let len = args.len();
 
             if let Some(x) = command.min_args {
@@ -566,6 +514,34 @@ impl StandardFramework {
                         max: x,
                         given: len,
                     });
+                }
+            }
+
+            if self.configuration.owners.contains(&message.author.id) {
+                return None;
+            }
+
+            if let Some(ref bucket) = command.bucket {
+                if let Some(ref mut bucket) = self.buckets.get_mut(bucket) {
+                    let guild_or_channel_id = message.guild_id().map_or(message.channel_id.0, |g| g.0);
+                    let rate_limit = bucket.take(guild_or_channel_id);
+
+                    // Is there a custom check for when this bucket applies?
+                    // If not, assert that it does always.
+                    let apply = bucket.check.as_ref().map_or(true, |check| {
+                        let apply = feature_cache! {{
+                            let guild_id = message.guild_id();
+                            (check)(context, guild_id, message.channel_id, message.author.id)
+                        } else {
+                            (check)(context, message.channel_id, message.author.id)
+                        }};
+
+                        apply
+                    });
+
+                    if apply && rate_limit > 0i64 {
+                        return Some(DispatchError::RateLimited(rate_limit));
+                    }
                 }
             }
 
@@ -628,7 +604,7 @@ impl StandardFramework {
                 let all_passed = command
                     .checks
                     .iter()
-                    .all(|check| check(&mut context, message, args, command));
+                    .all(|check| (check.0)(&mut context, message, args, command));
 
                 if all_passed {
                     None
@@ -717,7 +693,7 @@ impl StandardFramework {
     ///
     /// ```rust,ignore
     /// framework.command("ping", |c| c
-    ///     .description("Responds with 'pong'.")
+    ///     .desc("Responds with 'pong'.")
     ///     .exec(|ctx, _, _| {
     ///         let _ = ctx.say("pong");
     ///     }));
@@ -1004,14 +980,14 @@ impl Framework for StandardFramework {
         'outer: for position in positions {
             let mut built = String::new();
             let round = message.content.chars().skip(position).collect::<String>();
-            let round = round.trim().split_whitespace().collect::<Vec<&str>>(); // Call to `trim` causes the related bug under the main bug #206 - where the whitespace settings are ignored. The fix is implemented as an additional check inside command::positions
+            let mut round = round.trim().split_whitespace(); // Call to `trim` causes the related bug under the main bug #206 - where the whitespace settings are ignored. The fix is implemented as an additional check inside command::positions
 
             for i in 0..self.configuration.depth {
                 if i != 0 {
                     built.push(' ');
                 }
 
-                built.push_str(match round.get(i) {
+                built.push_str(match round.next() {
                     Some(piece) => piece,
                     None => continue 'outer,
                 });
@@ -1174,12 +1150,10 @@ pub enum HelpBehaviour {
     Nothing
 }
 
+use std::fmt;
+
 impl fmt::Display for HelpBehaviour {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-       match *self {
-           HelpBehaviour::Strike => write!(f, "HelpBehaviour::Strike"),
-           HelpBehaviour::Hide => write!(f, "HelpBehaviour::Hide"),
-           HelpBehaviour::Nothing => write!(f, "HelBehaviour::Nothing"),
-       }
+       fmt::Debug::fmt(self, f)
     }
 }

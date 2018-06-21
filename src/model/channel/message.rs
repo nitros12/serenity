@@ -30,6 +30,11 @@ pub struct Message {
     ///
     /// [`Channel`]: enum.Channel.html
     pub channel_id: ChannelId,
+    /// The Id of the [`Guild`] that the message was sent in. This value will
+    /// only be present if this message was received over the gateway.
+    /// 
+    /// [`Guild`]: ../guild/struct.Guild.html
+    pub guild_id: Option<GuildId>,
     /// The content of the message.
     pub content: String,
     /// The timestamp of the last time the message was updated, if it was.
@@ -488,6 +493,21 @@ impl Message {
         });
 
         http::send_message(self.channel_id.0, &map)
+    }
+
+    /// Checks whether the message mentions passed [`UserId`].
+    ///
+    /// [`UserId`]: ../../model/id/struct.UserId.html
+    pub fn mentions_user_id<I: Into<UserId>>(&self, id: I) -> bool {
+        let user_id_to_find = id.into();
+        self.mentions.iter().any(|mentioned_user| mentioned_user.id.0 == user_id_to_find.0)
+    }
+
+    /// Checks whether the message mentions passed [`User`].
+    ///
+    /// [`User`]: ../user/struct.User.html
+    pub fn mentions_user(&self, user: &User) -> bool {
+        self.mentions_user_id(user.id)
     }
 
     /// Unpins the message from its channel.
