@@ -53,6 +53,20 @@ impl<E: StdError> fmt::Display for Error<E> {
 
 type Result<T, E> = ::std::result::Result<T, Error<E>>;
 
+fn find_start(s: &str, i: usize) -> Option<usize> {
+    if i > s.len() {
+        return None;
+    }
+
+    let mut start = i - 1;
+
+    while !s.is_char_boundary(start) {
+        start -= 1;
+    }
+
+    Some(start)
+}
+
 fn find_end(s: &str, i: usize) -> Option<usize> {
     if i > s.len() {
         return None;
@@ -176,10 +190,11 @@ impl<'a> Lexer<'a> {
             }
 
             self.next();
+
             let end = self.offset;
 
-            return if self.at_end() && &self.msg[end-1..end] != "\"" {
-                // invalid, missing an end quote; view it as a normal argument instead.
+            return if self.at_end() && &self.msg[find_start(self.msg, end).unwrap()..end] != "\"" {
+                // We're missing an end quote. View this as a normal argument.
                 Token::new(TokenKind::Argument, &self.msg[start..], start)
             } else {
                 Token::new(TokenKind::QuotedArgument, &self.msg[start..end], start)
@@ -289,6 +304,33 @@ pub struct Args {
 }
 
 impl Args {
+    /// Create a new instance of `Args` for parsing arguments.
+    ///
+    /// For more reference, look at [`Args`]'s struct documentation.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use serenity::framework::standard::Args;
+    ///
+    /// let mut args = Args::new(
+    /// // Our source from where we'll parse over.
+    /// "the quick brown fox jumps over the lazy",
+    ///
+    /// // The "delimiters", or aka the separators. They denote how we distinguish arguments as their own.
+    /// // For this instance, we'll use one delimiter. The space (`0x20`), which will separate the arguments.
+    /// &[" ".to_string()],
+    /// );
+    ///
+    /// assert_eq!(args.single::<String>().unwrap(), "the");
+    /// assert_eq!(args.single::<String>().unwrap(), "quick");
+    /// assert_eq!(args.single::<String>().unwrap(), "brown");
+    ///
+    /// // We should not see `the quick brown` again.
+    /// assert_eq!(args.rest(), "fox jumps over the lazy");
+    /// ```
+    ///
+    /// [`Args`]: #struct.Args.html
     pub fn new(message: &str, possible_delimiters: &[String]) -> Self {
         let delims = possible_delimiters
             .iter()
@@ -849,6 +891,8 @@ impl Args {
     ///
     /// assert_eq!(args.len_quoted(), 2); // `2` because `["42", "69"]`
     /// ```
+    ///
+    /// [`len`]: #method.len
     #[deprecated(since = "0.5.3", note = "Its task was merged with `len`, please use it instead.")]
     pub fn len_quoted(&mut self) -> usize {
         self.len()
