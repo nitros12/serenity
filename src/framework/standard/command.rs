@@ -1,6 +1,9 @@
 use client::Context;
 use model::{
-    channel::Message,
+    channel::{
+        Message,
+        Channel,
+    },
     Permissions
 };
 use std::{
@@ -89,7 +92,7 @@ impl<D: fmt::Display> From<D> for Error {
 
 #[derive(Debug)]
 pub struct CommandGroup {
-    pub prefix: Option<String>,
+    pub prefixes: Option<Vec<String>>,
     pub commands: HashMap<String, CommandOrAlias>,
     /// Some fields taken from Command
     pub bucket: Option<String>,
@@ -100,12 +103,16 @@ pub struct CommandGroup {
     pub guild_only: bool,
     pub owners_only: bool,
     pub help: Option<Arc<Help>>,
+    /// A set of checks to be called prior to executing the command-group. The checks
+    /// will short-circuit on the first check that returns `false`.
+    pub checks: Vec<Check>,
+    pub default_command: Option<CommandOrAlias>,
 }
 
 impl Default for CommandGroup {
     fn default() -> CommandGroup {
         CommandGroup {
-            prefix: None,
+            prefixes: None,
             commands: HashMap::new(),
             bucket: None,
             required_permissions: Permissions::empty(),
@@ -115,6 +122,8 @@ impl Default for CommandGroup {
             owners_only: false,
             allowed_roles: Vec::new(),
             help: None,
+            checks: Vec::new(),
+            default_command: None,
         }
     }
 }
@@ -255,7 +264,6 @@ impl Default for HelpOptions {
     }
 }
 
-
 lazy_static! {
     static ref DEFAULT_OPTIONS: Arc<CommandOptions> = Arc::new(CommandOptions::default());
 }
@@ -359,6 +367,20 @@ pub fn positions(ctx: &mut Context, msg: &Message, conf: &Configuration) -> Opti
                 if msg.content.starts_with(n) {
                     positions.push(n.chars().count());
                 }
+            }
+        }
+
+        #[cfg(feature = "cache")]
+        {
+            let private = match msg.channel() {
+                Some(Channel::Private(_)) => true,
+                _ => false,
+            };
+
+            // If the above do not fill `positions`, then that means no kind of prefix was present.
+            // Check if a no-prefix-execution is applicable.
+            if conf.no_dm_prefix && private && positions.is_empty() {
+                positions.push(0);
             }
         }
 

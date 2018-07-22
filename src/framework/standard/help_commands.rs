@@ -48,7 +48,7 @@ use super::{
 };
 use utils::Colour;
 
-fn error_embed(channel_id: &ChannelId, input: &str, colour: Colour) {
+fn error_embed(channel_id: ChannelId, input: &str, colour: Colour) {
     let _ = channel_id.send_message(|m| {
         m.embed(|e| e.colour(colour).description(input))
     });
@@ -123,7 +123,7 @@ pub fn is_command_visible(command_options: &Arc<CommandOptions>, msg: &Message, 
         return help_options.wrong_channel != HelpBehaviour::Hide;
     }
 
-    return false
+    false
 }
 
 /// Posts an embed showing each individual command group and its commands.
@@ -159,8 +159,8 @@ pub fn with_embeds<H: BuildHasher>(
             let mut found: Option<(&String, &InternalCommand)> = None;
 
             for (command_name, command) in &group.commands {
-                let with_prefix = if let Some(ref prefix) = group.prefix {
-                    format!("{} {}", prefix, command_name)
+                let with_prefix = if let Some(ref prefixes) = group.prefixes {
+                    format!("{} {}", prefixes.join("`, `"), command_name)
                 } else {
                     command_name.to_string()
                 };
@@ -199,7 +199,7 @@ pub fn with_embeds<H: BuildHasher>(
             if let Some((command_name, command)) = found {
                 let command = command.options();
                 if !command.help_available {
-                    error_embed(&msg.channel_id, &help_options.no_help_available_text, help_options.embed_error_colour);
+                    error_embed(msg.channel_id, &help_options.no_help_available_text, help_options.embed_error_colour);
 
                     return Ok(());
                 }
@@ -229,7 +229,7 @@ pub fn with_embeds<H: BuildHasher>(
                         }
 
                         if !command.aliases.is_empty() {
-                            let aliases = command.aliases.join(", ");
+                            let aliases = command.aliases.join("`, `");
 
                             embed = embed.field(&help_options.aliases_label, aliases, true);
                         }
@@ -253,7 +253,7 @@ pub fn with_embeds<H: BuildHasher>(
         }
 
         let error_msg = help_options.command_not_found_text.replace("{}", name);
-        error_embed(&msg.channel_id, &error_msg, help_options.embed_error_colour);
+        error_embed(msg.channel_id, &error_msg, help_options.embed_error_colour);
 
         return Ok(());
     }
@@ -283,8 +283,8 @@ pub fn with_embeds<H: BuildHasher>(
                 let group = &groups[group_name];
                 let mut desc = String::new();
 
-                if let Some(ref x) = group.prefix {
-                    let _ = write!(desc, "{}: `{}`\n", &help_options.group_prefix, x);
+                if let Some(ref prefixes) = group.prefixes {
+                    let _ = writeln!(desc, "{}: `{}`", &help_options.group_prefix, prefixes.join("`, `"));
                 }
 
                 let mut has_commands = false;
@@ -307,17 +307,17 @@ pub fn with_embeds<H: BuildHasher>(
                                 if let Some(member) = guild.members.get(&msg.author.id) {
 
                                     if has_correct_roles(&cmd, &guild, &member) {
-                                        let _ = write!(desc, "`{}`\n", name);
+                                        let _ = writeln!(desc, "`{}`", name);
                                         has_commands = true;
                                     } else {
                                         match help_options.lacking_role {
                                             HelpBehaviour::Strike => {
                                                 let name = format!("~~`{}`~~", &name);
-                                                let _ = write!(desc, "{}\n", name);
+                                                let _ = writeln!(desc, "{}", name);
                                                 has_commands = true;
                                             },
                                                 HelpBehaviour::Nothing => {
-                                                let _ = write!(desc, "`{}`\n", name);
+                                                let _ = writeln!(desc, "`{}`", name);
                                                 has_commands = true;
                                             },
                                                 HelpBehaviour::Hide => {
@@ -327,18 +327,18 @@ pub fn with_embeds<H: BuildHasher>(
                                     }
                                 }
                             } else {
-                                let _ = write!(desc, "`{}`\n", name);
+                                let _ = writeln!(desc, "`{}`", name);
                                 has_commands = true;
                             }
                         } else {
                             match help_options.lacking_permissions {
                                 HelpBehaviour::Strike => {
                                     let name = format!("~~`{}`~~", &name);
-                                    let _ = write!(desc, "{}\n", name);
+                                    let _ = writeln!(desc, "{}", name);
                                     has_commands = true;
                                 },
                                 HelpBehaviour::Nothing => {
-                                    let _ = write!(desc, "`{}`\n", name);
+                                    let _ = writeln!(desc, "`{}`", name);
                                     has_commands = true;
                                 },
                                 HelpBehaviour::Hide => {
@@ -350,11 +350,11 @@ pub fn with_embeds<H: BuildHasher>(
                         match help_options.wrong_channel {
                             HelpBehaviour::Strike => {
                                 let name = format!("~~`{}`~~", &name);
-                                let _ = write!(desc, "{}\n", name);
+                                let _ = writeln!(desc, "{}", name);
                                 has_commands = true;
                             },
                             HelpBehaviour::Nothing => {
-                                let _ = write!(desc, "`{}`\n", name);
+                                let _ = writeln!(desc, "`{}`", name);
                                 has_commands = true;
                             },
                             HelpBehaviour::Hide => {
@@ -408,8 +408,8 @@ pub fn plain<H: BuildHasher>(
             let mut found: Option<(&String, &InternalCommand)> = None;
 
             for (command_name, command) in &group.commands {
-                let with_prefix = if let Some(ref prefix) = group.prefix {
-                    format!("{} {}", prefix, command_name)
+                let with_prefix = if let Some(ref prefixes) = group.prefixes {
+                    format!("{} {}", prefixes.join("`, `"), command_name)
                 } else {
                     command_name.to_string()
                 };
@@ -459,23 +459,23 @@ pub fn plain<H: BuildHasher>(
 
                 if !command.aliases.is_empty() {
                     let aliases = command.aliases.join("`, `");
-                    let _ = write!(result, "**{}:** `{}`\n", help_options.aliases_label, aliases);
+                    let _ = writeln!(result, "**{}:** `{}`", help_options.aliases_label, aliases);
                 }
 
                 if let Some(ref desc) = command.desc {
-                    let _ = write!(result, "**{}:** {}\n", help_options.description_label, desc);
+                    let _ = writeln!(result, "**{}:** {}", help_options.description_label, desc);
                 }
 
                 if let Some(ref usage) = command.usage {
-                    let _ = write!(result, "**{}:** `{} {}`\n", help_options.usage_label, command_name, usage);
+                    let _ = writeln!(result, "**{}:** `{} {}`", help_options.usage_label, command_name, usage);
                 }
 
                 if let Some(ref example) = command.example {
-                    let _ = write!(result, "**{}:** `{} {}`\n", help_options.usage_sample_label, command_name, example);
+                    let _ = writeln!(result, "**{}:** `{} {}`", help_options.usage_sample_label, command_name, example);
                 }
 
                 if group_name != "Ungrouped" {
-                    let _ = write!(result, "**{}:** {}\n", help_options.grouped_label, group_name);
+                    let _ = writeln!(result, "**{}:** {}", help_options.grouped_label, group_name);
                 }
 
                 let only = if command.dm_only {
@@ -497,7 +497,7 @@ pub fn plain<H: BuildHasher>(
         }
 
         let _ = msg.channel_id
-            .say(&help_options.suggestion_text.replace("{}", name));
+            .say(&help_options.command_not_found_text.replace("{}", name));
 
         return Ok(());
     }
@@ -511,9 +511,9 @@ pub fn plain<H: BuildHasher>(
     };
 
     if let Some(ref striked_command_text) = striked_command_tip {
-        let _ = write!(result, "{}\n{}\n\n", &help_options.individual_command_tip, striked_command_text);
+        let _ = writeln!(result, "{}\n{}\n", &help_options.individual_command_tip, striked_command_text);
     } else {
-        let _ = write!(result, "{}\n\n", &help_options.individual_command_tip);
+        let _ = writeln!(result, "{}\n", &help_options.individual_command_tip);
     }
 
     let mut group_names = groups.keys().collect::<Vec<_>>();
@@ -592,8 +592,8 @@ pub fn plain<H: BuildHasher>(
         if !group_help.is_empty() {
             let _ = write!(result, "**{}:** ", group_name);
 
-            if let Some(ref x) = group.prefix {
-                let _ = write!(result, "({}: `{}`): ", help_options.group_prefix, x);
+            if let Some(ref prefixes) = group.prefixes {
+                let _ = write!(result, "({}: `{}`): ", help_options.group_prefix, prefixes.join("`, `"));
             }
 
             result.push_str(&group_help);

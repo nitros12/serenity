@@ -53,26 +53,13 @@ impl<E: StdError> fmt::Display for Error<E> {
 
 type Result<T, E> = ::std::result::Result<T, Error<E>>;
 
-fn find_start(s: &str, i: usize) -> Option<usize> {
-    if i > s.len() {
-        return None;
-    }
-
-    let mut start = i - 1;
-
-    while !s.is_char_boundary(start) {
-        start -= 1;
-    }
-
-    Some(start)
-}
-
 fn find_end(s: &str, i: usize) -> Option<usize> {
     if i > s.len() {
         return None;
     }
 
     let mut end = i + 1;
+
     while !s.is_char_boundary(end) {
         end += 1;
     }
@@ -85,50 +72,19 @@ enum TokenKind {
     Delimiter,
     Argument,
     QuotedArgument,
-    Eof,
-}
-
-#[derive(Debug)]
-struct Token<'a> {
-    lit: &'a str,
-    kind: TokenKind,
-    pos: usize,
-}
-
-impl<'a> Token<'a> {
-    fn new(kind: TokenKind, lit: &'a str, pos: usize) -> Self {
-        Token { kind, lit, pos }
-    }
-
-    fn empty() -> Self {
-        Token {
-            kind: TokenKind::Eof,
-            lit: "",
-            pos: !0,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
-struct TokenOwned {
+struct Token {
     kind: TokenKind,
     lit: String,
+    // start position
     pos: usize,
 }
 
-impl<'a> Token<'a> {
-    fn to_owned(&self) -> TokenOwned {
-        TokenOwned {
-            kind: self.kind,
-            lit: self.lit.to_string(),
-            pos: self.pos,
-        }
-    }
-}
-
-impl PartialEq<TokenKind> for TokenOwned {
-    fn eq(&self, other: &TokenKind) -> bool {
-        self.kind == *other
+impl Token {
+    fn new(kind: TokenKind, lit: &str, pos: usize) -> Self {
+        Token { kind, lit: lit.to_string(), pos }
     }
 }
 
@@ -148,6 +104,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    #[inline]
     fn at_end(&self) -> bool {
         self.offset >= self.msg.len()
     }
@@ -170,44 +127,49 @@ impl<'a> Lexer<'a> {
         Some(())
     }
 
-    fn commit(&mut self) -> Token<'a> {
+    fn commit(&mut self) -> Option<Token> {
         if self.at_end() {
-            return Token::empty();
+            return None;
         }
 
-        if self.current().unwrap().contains(self.delims) {
+        if self.current()?.contains(self.delims) {
             let start = self.offset;
             self.next();
-            return Token::new(TokenKind::Delimiter, &self.msg[start..self.offset], start);
+            return Some(Token::new(TokenKind::Delimiter, &self.msg[start..self.offset], start));
         }
 
-        if self.current().unwrap() == "\"" {
+        if self.current()? == "\"" {
             let start = self.offset;
             self.next();
 
-            while !self.at_end() && self.current().unwrap() != "\"" {
+            while !self.at_end() && self.current()? != "\"" {
                 self.next();
             }
 
+            let is_quote = self.current().map_or(false, |s| s == "\"");
             self.next();
 
             let end = self.offset;
 
-            return if self.at_end() && &self.msg[find_start(self.msg, end).unwrap()..end] != "\"" {
+            return Some(if is_quote {
+                Token::new(TokenKind::QuotedArgument, &self.msg[start..end], start)
+            } else {
                 // We're missing an end quote. View this as a normal argument.
                 Token::new(TokenKind::Argument, &self.msg[start..], start)
-            } else {
-                Token::new(TokenKind::QuotedArgument, &self.msg[start..end], start)
-            };
+            });
         }
 
         let start = self.offset;
 
-        while !self.at_end() && !self.current().unwrap().contains(self.delims) {
+        while !self.at_end() {
+            if self.current()?.contains(self.delims) {
+                break;
+            }
+
             self.next();
         }
 
-        Token::new(TokenKind::Argument, &self.msg[start..self.offset], start)
+        Some(Token::new(TokenKind::Argument, &self.msg[start..self.offset], start))
     }
 }
 
@@ -299,7 +261,7 @@ impl<'a> Lexer<'a> {
 #[derive(Clone, Debug)]
 pub struct Args {
     message: String,
-    args: Vec<TokenOwned>,
+    args: Vec<Token>,
     offset: usize,
 }
 
@@ -342,14 +304,12 @@ impl Args {
 
         let mut args = Vec::new();
 
-        while !lex.at_end() {
-            let token = lex.commit();
-
+        while let Some(token) = lex.commit() {
             if token.kind == TokenKind::Delimiter {
                 continue;
             }
 
-            args.push(token.to_owned());
+            args.push(token);
         }
 
         Args {
@@ -977,7 +937,7 @@ impl<'a, T: FromStr> Iterator for IterQuoted<'a, T> where T::Err: StdError  {
     }
 }
 
-fn quotes_extract(token: &TokenOwned) -> &str {
+fn quotes_extract(token: &Token) -> &str {
     if token.kind == TokenKind::QuotedArgument {
         &token.lit[1..token.lit.len() - 1]
     } else {

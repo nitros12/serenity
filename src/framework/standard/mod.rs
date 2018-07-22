@@ -488,6 +488,7 @@ impl StandardFramework {
                    mut context: &mut Context,
                    message: &Message,
                    command: &Arc<CommandOptions>,
+                   group: &Arc<CommandGroup>,
                    args: &mut Args,
                    to_check: &str,
                    built: &str)
@@ -529,14 +530,12 @@ impl StandardFramework {
                     // Is there a custom check for when this bucket applies?
                     // If not, assert that it does always.
                     let apply = bucket.check.as_ref().map_or(true, |check| {
-                        let apply = feature_cache! {{
+                        feature_cache! {{
                             let guild_id = message.guild_id;
                             (check)(context, guild_id, message.channel_id, message.author.id)
                         } else {
                             (check)(context, message.channel_id, message.author.id)
-                        }};
-
-                        apply
+                        }}
                     });
 
                     if apply && rate_limit > 0i64 {
@@ -601,12 +600,21 @@ impl StandardFramework {
                     }
                 }
 
-                let all_passed = command
+                let all_group_checks_passed = group
                     .checks
                     .iter()
                     .all(|check| (check.0)(&mut context, message, args, command));
 
-                if all_passed {
+                if !all_group_checks_passed {
+                    return Some(DispatchError::CheckFailed);
+                }
+
+                let all_command_checks_passed = command
+                    .checks
+                    .iter()
+                    .all(|check| (check.0)(&mut context, message, args, command));
+
+                if all_command_checks_passed {
                     None
                 } else {
                     Some(DispatchError::CheckFailed)
@@ -709,12 +717,16 @@ impl StandardFramework {
                 let cmd = f(CreateCommand::default()).finish();
                 let name = command_name.to_string();
 
-                if let Some(ref prefix) = group.prefix {
+                if let Some(ref prefixes) = group.prefixes {
+
                     for v in &cmd.options().aliases {
-                        group.commands.insert(
-                            format!("{} {}", prefix, v),
-                            CommandOrAlias::Alias(format!("{} {}", prefix, name)),
-                        );
+
+                        for prefix in prefixes {
+                            group.commands.insert(
+                                format!("{} {}", prefix, v),
+                                CommandOrAlias::Alias(format!("{} {}", prefix, name)),
+                            );
+                        }
                     }
                 } else {
                     for v in &cmd.options().aliases {
@@ -942,9 +954,9 @@ impl StandardFramework {
     /// to alter help-commands.
     pub fn customised_help<F>(mut self, f: HelpFunction, c: F) -> Self
         where F: FnOnce(CreateHelpCommand) -> CreateHelpCommand {
-        let a = c(CreateHelpCommand(HelpOptions::default(), f));
+        let res = c(CreateHelpCommand(HelpOptions::default(), f));
 
-        self.help = Some(a.finish());
+        self.help = Some(res.finish());
 
         self
     }
@@ -978,9 +990,9 @@ impl Framework for StandardFramework {
             None => return,
         };
 
-        'outer: for position in positions {
+        'outer: for (index, position) in positions.iter().enumerate() {
             let mut built = String::new();
-            let round = message.content.chars().skip(position).collect::<String>();
+            let round = message.content.chars().skip(*position).collect::<String>();
             let mut round = round.trim().split_whitespace(); // Call to `trim` causes the related bug under the main bug #206 - where the whitespace settings are ignored. The fix is implemented as an additional check inside command::positions
 
             for i in 0..self.configuration.depth {
@@ -1011,9 +1023,24 @@ impl Framework for StandardFramework {
                         built = points_to.to_string();
                     }
 
-                    let to_check = if let Some(ref prefix) = group.prefix {
-                        if built.starts_with(prefix) && command_length > prefix.len() + 1 {
-                            built[(prefix.len() + 1)..].to_string()
+                    let to_check = if let Some(ref prefixes) = group.prefixes {
+                        // Once `built` starts with a set prefix,
+                        // we want to make sure that all following matching prefixes are longer
+                        // than the last matching one, this prevents picking a wrong prefix,
+                        // e.g. "f" instead of "ferris" due to "f" having a lower index in the `Vec`.
+                        let longest_matching_prefix_len = prefixes.iter().fold(0, |longest_prefix_len, prefix|
+                            if prefix.len() > longest_prefix_len && built.starts_with(prefix)
+                            && (index + 1 == positions.len() || command_length > prefix.len() + 1) {
+                                prefix.len()
+                            } else {
+                                longest_prefix_len
+                            }
+                        );
+
+                        if longest_matching_prefix_len == built.len() {
+                            String::new()
+                        } else if longest_matching_prefix_len > 0 {
+                            built[longest_matching_prefix_len + 1..].to_string()
                         } else {
                             continue;
                         }
@@ -1022,7 +1049,7 @@ impl Framework for StandardFramework {
                     };
 
                     let mut args = {
-                        let content = message.content.chars().skip(position).skip_while(|x| x.is_whitespace())
+                        let content = message.content.chars().skip(*position).skip_while(|x| x.is_whitespace())
                             .skip(command_length).collect::<String>();
 
                         Args::new(&content.trim(), &self.configuration.delimiters)
@@ -1031,7 +1058,34 @@ impl Framework for StandardFramework {
                     let before = self.before.clone();
                     let after = self.after.clone();
 
-                    if to_check == "help" {
+                    if to_check.is_empty() {
+
+                        if let Some(CommandOrAlias::Command(ref command)) = &group.default_command {
+                            let command = Arc::clone(command);
+
+                            threadpool.execute(move || {
+                                if let Some(before) = before {
+                                    if !(before)(&mut context, &message, &built) {
+                                        return;
+                                    }
+                                }
+
+                                if !command.before(&mut context, &message) {
+                                    return;
+                                }
+
+                                let result = command.execute(&mut context, &message, args);
+
+                                command.after(&mut context, &message, &result);
+
+                                if let Some(after) = after {
+                                    (after)(&mut context, &message, &built, result);
+                                }
+                            });
+
+                            return;
+                        }
+                    } else if to_check == "help" {
                         let help = self.help.clone();
 
                         if let Some(help) = help {
@@ -1063,6 +1117,7 @@ impl Framework for StandardFramework {
                             &mut context,
                             &message,
                             &command.options(),
+                            &group,
                             &mut args,
                             &to_check,
                             &built,

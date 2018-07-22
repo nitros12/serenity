@@ -8,12 +8,15 @@ pub(crate) use super::command::CommandOrAlias;
 pub use super::{
     create_help_command::CreateHelpCommand,
     create_command::{CreateCommand, FnOrCommand},
-    Args
+    Args,
+    Check,
 };
 
 use client::Context;
-use model::channel::Message;
-use model::Permissions;
+use model::{
+    channel::Message,
+    Permissions,
+};
 use std::sync::Arc;
 
 /// Used to create command groups
@@ -55,11 +58,15 @@ impl CreateGroup {
         let cmd = f(self.build_command()).finish();
 
         for n in &cmd.options().aliases {
-            if let Some(ref prefix) = self.0.prefix {
-                self.0.commands.insert(
-                    format!("{} {}", prefix, n.to_string()),
-                    CommandOrAlias::Alias(format!("{} {}", prefix, command_name.to_string())),
-                );
+
+            if let Some(ref prefixes) = self.0.prefixes {
+
+                for prefix in prefixes {
+                    self.0.commands.insert(
+                        format!("{} {}", prefix, n.to_string()),
+                        CommandOrAlias::Alias(format!("{} {}", prefix, command_name.to_string())),
+                    );
+                }
             } else {
                 self.0.commands.insert(
                     n.to_string(),
@@ -105,8 +112,20 @@ impl CreateGroup {
     /// **Note**: serenity automatically puts a space after group prefix.
     ///
     /// **Note**: It's suggested to call this first when making a group.
-    pub fn prefix(mut self, desc: &str) -> Self {
-        self.0.prefix = Some(desc.to_string());
+    pub fn prefix(mut self, prefix: &str) -> Self {
+        self.0.prefixes = Some(vec![prefix.to_string()]);
+
+        self
+    }
+
+    /// Sets prefixes to respond to. Each can be a string slice of any
+    /// non-zero length.
+    ///
+    /// **Note**: serenity automatically puts a space after group prefix.
+    ///
+    /// **Note**: It's suggested to call this first when making a group.
+    pub fn prefixes<T: ToString, I: IntoIterator<Item=T>>(mut self, prefixes: I) -> Self {
+        self.0.prefixes = Some(prefixes.into_iter().map(|prefix| prefix.to_string()).collect());
 
         self
     }
@@ -158,6 +177,32 @@ impl CreateGroup {
     #[cfg(feature = "cache")]
     pub fn allowed_roles<T: ToString, It: IntoIterator<Item=T>>(mut self, allowed_roles: It) -> Self {
         self.0.allowed_roles = allowed_roles.into_iter().map(|x| x.to_string()).collect();
+
+        self
+    }
+
+    /// Adds a "check" to a group, which checks whether or not the groups's
+    /// commands should be called.
+    ///
+    /// **Note**: These checks are bypassed for commands sent by the application owner.
+    pub fn check<F>(mut self, check: F) -> Self
+        where F: Fn(&mut Context, &Message, &mut Args, &CommandOptions) -> bool
+                     + Send
+                     + Sync
+                     + 'static {
+        self.0.checks.push(Check::new(check));
+
+        self
+    }
+
+    /// Adds a command for a group that will be executed if no command-name
+    /// has been passed.
+    pub fn default_cmd<C: Command + 'static>(mut self, c: C) -> Self {
+        let cmd: Arc<Command> = Arc::new(c);
+
+        self.0.default_command = Some(CommandOrAlias::Command(Arc::clone(&cmd)));
+
+        cmd.init();
 
         self
     }
