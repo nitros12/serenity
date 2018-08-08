@@ -399,10 +399,6 @@ pub fn positions(ctx: &mut Context, msg: &Message, conf: &Configuration) -> Opti
         }
 
         Some(positions)
-    } else if conf.on_mention.is_some() {
-        find_mention_end(&msg.content, conf).map(|mention_end| {
-            vec![mention_end] // This can simply be returned without trying to find the end whitespaces as trim will remove it later
-        })
     } else {
         None
     }

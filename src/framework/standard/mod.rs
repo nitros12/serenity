@@ -325,12 +325,10 @@ impl StandardFramework {
     ///
     /// client.with_framework(StandardFramework::new()
     ///     .complex_bucket("basic", 2, 10, 3, |_, guild_id, channel_id, user_id| {
-    /// // check if the guild is `123` and the channel where the command(s) was called:
-    /// // `456`
-    ///         // and if the user who called the command(s) is `789`
-    ///         // otherwise don't apply the bucket at all.
-    /// guild_id.is_some() && guild_id.unwrap() == 123 && channel_id == 456
-    /// && user_id == 789
+    ///         // Our bucket is very strict. It cannot apply in DMs.
+    ///         // And can only apply if it's in the specific guild, channel and by the specific user.
+    ///         guild_id.is_some() && guild_id.unwrap() == 123 && channel_id == 456
+    ///         && user_id == 789
     ///     })
     ///     .command("ping", |c| c
     ///         .bucket("basic")
@@ -338,7 +336,9 @@ impl StandardFramework {
     ///             msg.channel_id.say("pong!")?;
     ///
     ///             Ok(())
-    ///         })));
+    ///         })
+    ///     )
+    /// );
     /// ```
     ///
     /// [`bucket`]: #method.bucket
@@ -384,14 +384,18 @@ impl StandardFramework {
     ///
     /// client.with_framework(StandardFramework::new()
     ///     .complex_bucket("basic", 2, 10, 3, |_, channel_id, user_id| {
-    ///         // check if the channel's id where the command(s) was called is `456`
-    ///         // and if the user who called the command(s) is `789`
-    ///         // otherwise don't apply the bucket at all.
+    ///         Our bucket is somewhat strict. It can only apply in the specific channel and by the specific user.
     ///         channel_id == 456 && user_id == 789
     ///     })
     ///     .command("ping", |c| c
     ///         .bucket("basic")
-    ///         .exec_str("pong!")));
+    ///         .exec(|_, msg, _| {
+    ///             msg.channel_id.say("pong!")?;
+    ///
+    ///             Ok(())
+    ///         })
+    ///     )
+    /// );
     /// ```
     ///
     /// [`bucket`]: #method.bucket
@@ -1041,8 +1045,9 @@ impl Framework for StandardFramework {
                         // than the last matching one, this prevents picking a wrong prefix,
                         // e.g. "f" instead of "ferris" due to "f" having a lower index in the `Vec`.
                         let longest_matching_prefix_len = prefixes.iter().fold(0, |longest_prefix_len, prefix|
-                            if prefix.len() > longest_prefix_len && built.starts_with(prefix)
-                            && (orginal_round.len() == built.len() || command_length > prefix.len() + 1) {
+                            if prefix.len() > longest_prefix_len
+                            && built.starts_with(prefix)
+                            && (orginal_round.len() == prefix.len() || built.get(prefix.len()..prefix.len() + 1) == Some(" ")) {
                                 prefix.len()
                             } else {
                                 longest_prefix_len
@@ -1062,13 +1067,6 @@ impl Framework for StandardFramework {
                         built.clone()
                     };
 
-                    let mut args = {
-                        let content = message.content.chars().skip(position).skip_while(|x| x.is_whitespace())
-                            .skip(command_length).collect::<String>();
-
-                        Args::new(&content.trim(), &self.configuration.delimiters)
-                    };
-
                     let before = self.before.clone();
                     let after = self.after.clone();
 
@@ -1077,6 +1075,16 @@ impl Framework for StandardFramework {
 
                         if let Some(help) = help {
                             let groups = self.groups.clone();
+
+                            // `Args`-construction here inside help-dispatch and the command-dispatch-section
+                            // shall stay identical, please update accordingly upon change.
+                            let mut args = {
+                                let content = message.content.chars().skip(position).skip_while(|x| x.is_whitespace())
+                                    .skip(command_length).collect::<String>();
+
+                                Args::new(&content.trim(), &self.configuration.delimiters)
+                            };
+
                             threadpool.execute(move || {
 
                                 if let Some(before) = before {
@@ -1096,12 +1104,20 @@ impl Framework for StandardFramework {
                         }
                     }
 
-
                     if !to_check.is_empty() {
 
                         if let Some(&CommandOrAlias::Command(ref command)) =
                             group.commands.get(&to_check) {
                             let command = Arc::clone(command);
+
+                            // `Args`-construction here inside command-dispatch and the help-dispatch
+                            // shall stay identical, please update accordingly upon change.
+                            let mut args = {
+                                let content = message.content.chars().skip(position).skip_while(|x| x.is_whitespace())
+                                    .skip(command_length).collect::<String>();
+
+                                Args::new(&content.trim(), &self.configuration.delimiters)
+                            };
 
                             if let Some(error) = self.should_fail(
                                 &mut context,
@@ -1144,12 +1160,18 @@ impl Framework for StandardFramework {
                     }
 
                     if check_contains_group_prefix {
-                        if let Some(CommandOrAlias::Command(ref command)) = &group.default_command {
+
+                        if let &Some(CommandOrAlias::Command(ref command)) = &group.default_command {
                             let command = Arc::clone(command);
+                            let mut args = {
+                                let content = to_check;
+
+                                Args::new(&content.trim(), &self.configuration.delimiters)
+                            };
 
                             threadpool.execute(move || {
                                 if let Some(before) = before {
-                                    if !(before)(&mut context, &message, &built) {
+                                    if !(before)(&mut context, &message, &args.full()) {
                                         return;
                                     }
                                 }
@@ -1178,7 +1200,7 @@ impl Framework for StandardFramework {
             return;
         }
 
-        if let Some(unrecognised_command) = &self.unrecognised_command {
+        if let &Some(ref unrecognised_command) = &self.unrecognised_command {
             let unrecognised_command = unrecognised_command.clone();
             threadpool.execute(move || {
                 (unrecognised_command)(&mut context, &message, &unrecognised_command_name);
