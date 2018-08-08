@@ -547,7 +547,6 @@ impl Default for Configuration {
             delimiters: vec![" ".to_string()],
             depth: 5,
             disabled_commands: HashSet::default(),
-            dynamic_prefix: None,
             ignore_bots: true,
             ignore_webhooks: true,
             no_dm_prefix: false,

@@ -528,7 +528,7 @@ impl StandardFramework {
 
             if let Some(ref bucket) = command.bucket {
                 if let Some(ref mut bucket) = self.buckets.get_mut(bucket) {
-                    let guild_or_channel_id = message.guild_id().map_or(message.channel_id.0, |g| g.0);
+                    let guild_or_channel_id = message.guild_id.map_or(message.channel_id.0, |g| g.0);
                     let rate_limit = bucket.take(guild_or_channel_id);
 
                     // Is there a custom check for when this bucket applies?
