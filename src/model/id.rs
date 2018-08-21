@@ -16,6 +16,18 @@ macro_rules! id_u64 {
 
                     NaiveDateTime::from_timestamp(1_420_070_400 + offset as i64, 0)
                 }
+
+                /// Immutably borrow inner Id.
+                #[inline]
+                pub fn as_u64(&self) -> &u64 {
+                    &self.0
+                }
+
+                /// Mutably borrow inner Id.
+                #[inline]
+                pub fn as_mut_u64(&mut self) -> &mut u64 {
+                    &mut self.0
+                }
             }
 
             // This is a hack so functions can accept iterators that either:
@@ -106,7 +118,7 @@ pub struct RoleId(pub u64);
 #[allow(derive_hash_xor_eq)]
 pub struct UserId(pub u64);
 
-/// An identifier for a [`Webhook`](struct.Webhook.html).
+/// An identifier for a [`Webhook`](../webhook/struct.Webhook.html).
 #[derive(Copy, Clone, Default, Debug, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[allow(derive_hash_xor_eq)]
 pub struct WebhookId(pub u64);

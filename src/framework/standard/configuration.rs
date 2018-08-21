@@ -13,7 +13,7 @@ use parking_lot::RwLock;
 // use super::command::PrefixCheck;
 use super::command::MultiPrefixCheck;
 
-/// The configuration to use for a [`Framework`] associated with a [`Client`]
+/// The configuration to use for a [`StandardFramework`] associated with a [`Client`]
 /// instance.
 ///
 /// This allows setting configurations like the depth to search for commands,
@@ -43,7 +43,7 @@ use super::command::MultiPrefixCheck;
 /// ```
 ///
 /// [`Client`]: ../../client/struct.Client.html
-/// [`Framework`]: struct.Framework.html
+/// [`StandardFramework`]: struct.StandardFramework.html
 /// [default implementation]: #impl-Default
 pub struct Configuration {
     #[doc(hidden)] pub allow_dm: bool,
