@@ -105,7 +105,7 @@ impl CreateCommand {
     /// }
     /// ```
     pub fn check<F>(mut self, check: F) -> Self
-        where F: Fn(&mut Context, &Message, &mut Args, &CommandOptions) -> bool
+        where F: Fn(&mut Context, &Message, &mut Args, &CommandOptions) -> Result<(), String>
                      + Send
                      + Sync
                      + 'static {

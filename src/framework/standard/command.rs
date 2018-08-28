@@ -11,21 +11,22 @@ use std::{
     fmt,
     fmt::{Debug, Formatter},
     sync::Arc,
+    result,
 };
 use utils::Colour;
 use super::{Args, Configuration, HelpBehaviour};
 use parking_lot::RwLock;
 
-type CheckFunction = Fn(&mut Context, &Message, &mut Args, &CommandOptions) -> bool
-                     + Send
-                     + Sync
-                     + 'static;
+type CheckFunction = Fn(&mut Context, &Message, &mut Args, &CommandOptions) -> result::Result<(), String>
+    + Send
+    + Sync
+    + 'static;
 
 pub struct Check(pub(crate) Box<CheckFunction>);
 
 impl Check {
     pub(crate) fn new<F: Send + Sync + 'static>(f: F) -> Self
-        where F: Fn(&mut Context, &Message, &mut Args, &CommandOptions) -> bool
+        where F: Fn(&mut Context, &Message, &mut Args, &CommandOptions) -> result::Result<(), String>
     {
         Check(Box::new(f))
     }

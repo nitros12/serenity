@@ -17,7 +17,10 @@ use model::{
     channel::Message,
     Permissions,
 };
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    result
+};
 
 /// Used to create command groups
 ///
@@ -186,10 +189,11 @@ impl CreateGroup {
     ///
     /// **Note**: These checks are bypassed for commands sent by the application owner.
     pub fn check<F>(mut self, check: F) -> Self
-        where F: Fn(&mut Context, &Message, &mut Args, &CommandOptions) -> bool
-                     + Send
-                     + Sync
-                     + 'static {
+        where F: Fn(&mut Context, &Message, &mut Args, &CommandOptions) -> result::Result<(), String>
+            + Send
+            + Sync
+            + 'static
+    {
         self.0.checks.push(Check::new(check));
 
         self

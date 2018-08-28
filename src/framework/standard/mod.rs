@@ -165,7 +165,7 @@ pub enum DispatchError {
     /// When a custom function check has failed.
     //
     // TODO: Bring back `Arc<Command>` as `CommandOptions` in 0.6.x.
-    CheckFailed,
+    CheckFailed(String),
     /// When the requested command is disabled in bot configuration.
     CommandDisabled(String),
     /// When the user is blocked in bot configuration.
@@ -614,25 +614,19 @@ impl StandardFramework {
                     }
                 }
 
-                let all_group_checks_passed = group
-                    .checks
-                    .iter()
-                    .all(|check| (check.0)(&mut context, message, args, command));
-
-                if !all_group_checks_passed {
-                    return Some(DispatchError::CheckFailed);
+                for check in &group.checks {
+                    if let Err(e) = (check.0)(&mut context, message, args, command) {
+                        return Some(DispatchError::CheckFailed(e));
+                    }
                 }
 
-                let all_command_checks_passed = command
-                    .checks
-                    .iter()
-                    .all(|check| (check.0)(&mut context, message, args, command));
-
-                if all_command_checks_passed {
-                    None
-                } else {
-                    Some(DispatchError::CheckFailed)
+                for check in &command.checks {
+                    if let Err(e) = (check.0)(&mut context, message, args, command) {
+                        return Some(DispatchError::CheckFailed(e));
+                    }
                 }
+
+                None
             }
         }
     }
