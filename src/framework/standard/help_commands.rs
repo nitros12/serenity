@@ -25,7 +25,7 @@
 
 use client::Context;
 #[cfg(feature = "cache")]
-use framework::standard::{has_correct_roles, has_correct_permissions};
+use framework::standard::{has_correct_roles, has_correct_permissions, Configuration};
 use model::{
     channel::Message,
     id::ChannelId,
@@ -313,6 +313,7 @@ fn fetch_single_command<'a, H: BuildHasher>(
 
 /// Tries to extract a single command matching searched command name.
 fn fetch_all_eligible_commands_in_group<'a>(
+    config: &Configuration,
     commands: &HashMap<&String, &InternalCommand>,
     command_names: &[&&String],
     help_options: &'a HelpOptions,
@@ -325,11 +326,21 @@ fn fetch_all_eligible_commands_in_group<'a>(
         let cmd = &commands[&*name];
         let cmd = cmd.options();
 
+        if cmd.owners_only && !config.owners.contains(&msg.author.id) {
+            let name = format_command_name!(&help_options.not_owner, &name);
+            group_with_cmds.command_names.push(name);
+        }
+
         if !cmd.dm_only && !cmd.guild_only
             || cmd.dm_only && msg.is_private()
             || cmd.guild_only && !msg.is_private()
         {
-            if cmd.help_available && has_correct_permissions(&cmd, msg) {
+            if !cmd.help_available {
+                // if the help is disabled don't show it either
+                continue;
+            }
+
+            if has_correct_permissions(&cmd, msg) {
 
                 if let Some(guild) = msg.guild() {
                     let guild = guild.read();
@@ -361,6 +372,7 @@ fn fetch_all_eligible_commands_in_group<'a>(
 
 /// Fetch groups with their commands.
 fn create_command_group_commands_pair_from_groups<'a, H: BuildHasher>(
+    config: &Configuration,
     groups: &'a HashMap<String, Arc<CommandGroup>, H>,
     group_names: &[&'a String],
     msg: &Message,
@@ -375,6 +387,7 @@ fn create_command_group_commands_pair_from_groups<'a, H: BuildHasher>(
         command_names.sort();
 
         let mut group_with_cmds = fetch_all_eligible_commands_in_group(
+            config,
             &commands,
             &command_names,
             &help_options,
@@ -387,6 +400,10 @@ fn create_command_group_commands_pair_from_groups<'a, H: BuildHasher>(
             group_with_cmds.prefixes.extend_from_slice(&prefixes);
         }
 
+        if group_with_cmds.command_names.is_empty() {
+            continue;
+        }
+
         listed_groups.push(group_with_cmds);
     }
 
@@ -397,6 +414,7 @@ fn create_command_group_commands_pair_from_groups<'a, H: BuildHasher>(
 /// taking `HelpOptions` into consideration when deciding on whether a command
 /// shall be picked and in what textual format.
 pub fn create_customised_help_data<'a, H: BuildHasher>(
+    config: &Configuration,
     groups: &'a HashMap<String, Arc<CommandGroup>, H>,
     args: &Args,
     help_options: &'a HelpOptions,
@@ -433,7 +451,7 @@ pub fn create_customised_help_data<'a, H: BuildHasher>(
     group_names.sort();
 
     let listed_groups =
-        create_command_group_commands_pair_from_groups(&groups, &group_names, &msg, &help_options);
+        create_command_group_commands_pair_from_groups(config, &groups, &group_names, &msg, &help_options);
 
     return if listed_groups.is_empty() {
         CustomisedHelpData::NoCommandFound {
@@ -551,13 +569,14 @@ fn send_error_embed(channel_id: ChannelId, input: &str, colour: Colour) -> Resul
 /// ```
 #[cfg(feature = "cache")]
 pub fn with_embeds<H: BuildHasher>(
+    config: &Configuration,
     _: &mut Context,
     msg: &Message,
     help_options: &HelpOptions,
     groups: HashMap<String, Arc<CommandGroup>, H>,
     args: &Args
 ) -> Result<(), CommandError> {
-    let formatted_help = create_customised_help_data(&groups, args, help_options, msg);
+    let formatted_help = create_customised_help_data(config, &groups, args, help_options, msg);
 
     if let Err(why) = match &formatted_help {
         &CustomisedHelpData::SuggestedCommands { ref help_description, ref suggestions } =>
@@ -656,13 +675,14 @@ fn single_command_to_plain_string(help_options: &HelpOptions, command: &Command)
 /// ```
 #[cfg(feature = "cache")]
 pub fn plain<H: BuildHasher>(
+    config: &Configuration,
     _: &mut Context,
     msg: &Message,
     help_options: &HelpOptions,
     groups: HashMap<String, Arc<CommandGroup>, H>,
     args: &Args
 ) -> Result<(), CommandError> {
-    let formatted_help = create_customised_help_data(&groups, args, help_options, msg);
+    let formatted_help = create_customised_help_data(config, &groups, args, help_options, msg);
 
     let result = match &formatted_help {
         &CustomisedHelpData::SuggestedCommands { ref help_description, ref suggestions } =>

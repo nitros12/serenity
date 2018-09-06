@@ -209,7 +209,7 @@ type DispatchErrorHook = Fn(Context, Message, DispatchError) + Send + Sync + 'st
 /// [module-level documentation]: index.html
 #[derive(Default)]
 pub struct StandardFramework {
-    configuration: Configuration,
+    configuration: Arc<Configuration>,
     groups: HashMap<String, Arc<CommandGroup>>,
     help: Option<Arc<Help>>,
     before: Option<Arc<BeforeHook>>,
@@ -272,7 +272,9 @@ impl StandardFramework {
     /// [allowing whitespace]: struct.Configuration.html#method.allow_whitespace
     pub fn configure<F>(mut self, f: F) -> Self
         where F: FnOnce(Configuration) -> Configuration {
-        self.configuration = f(self.configuration);
+        let cfg = f(Configuration::default());
+
+        self.configuration = Arc::new(cfg);
 
         self
     }
@@ -1082,6 +1084,8 @@ impl Framework for StandardFramework {
                             let groups = self.groups.clone();
                             let mut args = command_and_help_args!(&message.content, position, command_length, &self.configuration.delimiters);
 
+                            let config = self.configuration.clone();
+
                             threadpool.execute(move || {
 
                                 if let Some(before) = before {
@@ -1091,7 +1095,7 @@ impl Framework for StandardFramework {
                                     }
                                 }
 
-                                let result = (help.0)(&mut context, &message, &help.1, groups, &args);
+                                let result = (help.0)(&*config, &mut context, &message, &help.1, groups, &args);
 
                                 if let Some(after) = after {
                                     (after)(&mut context, &message, &built, result);
