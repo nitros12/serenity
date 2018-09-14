@@ -35,6 +35,7 @@ use std::{
     borrow::Borrow,
     collections::HashMap,
     hash::BuildHasher,
+    ops::{Index, IndexMut},
     sync::Arc,
     fmt::Write,
 };
@@ -82,8 +83,8 @@ pub struct GroupCommandsPair<'a> {
 /// A single suggested command containing its name and Levenshtein distance
 /// to the actual user's searched command name.
 #[derive(Clone, Debug, Default)]
-struct SuggestedCommandName<'a> {
-    name: &'a str,
+struct SuggestedCommandName {
+    name: String,
     levenshtein_distance: usize,
 }
 
@@ -96,30 +97,38 @@ pub struct Command<'a> {
     availability: &'a str,
     description: Option<String>,
     usage: Option<String>,
+    usage_sample: Option<String>,
 }
 
 /// Contains possible suggestions in case a command could not be found
 /// but are similar enough.
 #[derive(Clone, Debug, Default)]
-pub struct Suggestions<'a>(Vec<SuggestedCommandName<'a>>);
+pub struct Suggestions(Vec<SuggestedCommandName>);
 
-impl<'a> Suggestions<'a> {
+impl Suggestions {
     /// Immutably borrow inner `Vec`.
     #[inline]
     fn as_vec(&self) -> &Vec<SuggestedCommandName> {
         &self.0
     }
 
-    /// Concat names of suggestions with a given `seperator`.
+    /// Concats names of suggestions with a given `seperator`.
     fn join(&self, seperator: &str) -> String {
-        let iter = self.as_vec().iter();
+        let mut iter = self.as_vec().iter();
+
+        let first_iter_element = match iter.next() {
+            Some(first_iter_element) => first_iter_element,
+            None => return String::new(),
+        };
+
         let size = self.as_vec().iter().fold(0, |total_size, size| total_size + size.name.len());
         let byte_len_of_sep = self.as_vec().len().checked_sub(1).unwrap_or(0) * seperator.len();
         let mut result = String::with_capacity(size + byte_len_of_sep);
+        result.push_str(first_iter_element.name.borrow());
 
-        for v in iter {
+        for element in iter {
             result.push_str(&*seperator);
-            result.push_str(v.name.borrow());
+            result.push_str(element.name.borrow());
         }
 
         result
@@ -134,7 +143,7 @@ pub enum CustomisedHelpData<'a> {
     /// To display suggested commands.
     SuggestedCommands {
         help_description: String,
-        suggestions: Suggestions<'a>,
+        suggestions: Suggestions,
     },
     /// To display groups and their commands by name.
     GroupedCommands {
@@ -145,6 +154,72 @@ pub enum CustomisedHelpData<'a> {
     SingleCommand { command: Command<'a> },
     /// To display failure in finding a fitting command.
     NoCommandFound { help_error_message: &'a str },
+}
+
+/// Wraps around a `Vec<Vec<T>>` and provides access
+/// via indexing of tuples representing x and y.
+#[derive(Debug)]
+struct Matrix {
+    vec: Vec<usize>,
+    width: usize,
+}
+
+impl Matrix {
+    fn new(columns: usize, rows: usize) -> Matrix {
+        Matrix {
+            vec: vec![0; columns * rows],
+            width: rows,
+        }
+    }
+}
+
+impl Index<(usize, usize)> for Matrix {
+    type Output = usize;
+
+    fn index(&self, matrix_entry: (usize, usize)) -> &usize {
+        &self.vec[matrix_entry.1 * self.width + matrix_entry.0]
+    }
+}
+
+impl IndexMut<(usize, usize)> for Matrix {
+    fn index_mut(&mut self, matrix_entry: (usize, usize)) -> &mut usize {
+        &mut self.vec[matrix_entry.1 * self.width + matrix_entry.0]
+    }
+}
+
+/// Calculates and returns levenshtein distance between
+/// two passed words.
+pub(crate) fn levenshtein_distance(word_a: &str, word_b: &str) -> usize {
+    let len_a = word_a.chars().count();
+    let len_b = word_b.chars().count();
+
+    if len_a == 0 {
+        return len_b;
+    } else if len_b == 0 {
+        return len_a;
+    }
+
+    let mut matrix = Matrix::new(len_b + 1, len_a + 1);
+
+    for x in 0..len_a {
+        matrix[(x + 1, 0)] = matrix[(x, 0)] + 1;
+    }
+
+    for y in 0..len_b {
+        matrix[(0, y + 1)] = matrix[(0, y)] + 1;
+    }
+
+    for (x, char_a) in word_a.chars().enumerate() {
+
+        for (y, char_b) in word_b.chars().enumerate() {
+
+            matrix[(x + 1, y + 1)] = (matrix[(x, y + 1)] + 1)
+                .min(matrix[(x + 1, y)] + 1)
+                .min(matrix[(x, y)] + if char_a == char_b { 0 } else { 1 });
+        }
+    }
+
+    matrix[(len_a, len_b)]
 }
 
 fn remove_aliases(cmds: &HashMap<String, CommandOrAlias>) -> HashMap<&String, &InternalCommand> {
@@ -226,24 +301,30 @@ pub fn is_command_visible(command_options: &Arc<CommandOptions>, msg: &Message, 
     false
 }
 
-/// Tries to extract a single command matching searched command name.
+/// Tries to extract a single command matching searched command name otherwise
+/// returns similar commands.
 fn fetch_single_command<'a, H: BuildHasher>(
     groups: &'a HashMap<String, Arc<CommandGroup>, H>,
     name: &str,
     help_options: &'a HelpOptions,
     msg: &Message,
-) -> Option<CustomisedHelpData<'a>> {
+) -> Result<CustomisedHelpData<'a>, Vec<SuggestedCommandName>> {
+    let mut similar_commands: Vec<SuggestedCommandName> = Vec::new();
+
     for (group_name, group) in groups {
         let mut found: Option<(&String, &InternalCommand)> = None;
 
         for (command_name, command) in &group.commands {
-            let with_prefix = if let Some(ref prefixes) = group.prefixes {
-                format!("`{}` {}", prefixes.join("`, `"), command_name)
+
+            let search_command_name_matched = if let &Some(ref prefixes) = &group.prefixes {
+                prefixes.iter().any(|prefix| {
+                    format!("{} {}", prefix, command_name) == name
+                })
             } else {
-                command_name.to_string()
+                name == *command_name
             };
 
-            if name == with_prefix || name == *command_name {
+            if search_command_name_matched {
 
                 match *command {
                     CommandOrAlias::Command(ref cmd) => {
@@ -265,7 +346,7 @@ fn fetch_single_command<'a, H: BuildHasher>(
                                 }
                             },
                             CommandOrAlias::Alias(ref name) => {
-                                return Some(CustomisedHelpData::SuggestedCommands {
+                                return Ok(CustomisedHelpData::SuggestedCommands {
                                     help_description: help_options
                                         .suggestion_text
                                         .replace("{}", name),
@@ -275,6 +356,31 @@ fn fetch_single_command<'a, H: BuildHasher>(
                         }
                     }
                 }
+            } else if help_options.max_levenshtein_distance > 0 {
+
+                if let &CommandOrAlias::Command(ref cmd) = command {
+
+                    let command_name = if let &Some(ref prefixes) = &group.prefixes {
+                        if let Some(first_prefix) = prefixes.get(0) {
+                            format!("{} {}",  &first_prefix, &command_name).to_string()
+                        } else {
+                            command_name.to_string()
+                        }
+                    } else {
+                        command_name.to_string()
+                    };
+
+                    let levenshtein_distance = levenshtein_distance(&command_name, &name);
+
+                    if levenshtein_distance <= help_options.max_levenshtein_distance
+                        && is_command_visible(&cmd.options(), &msg, &help_options) {
+
+                        similar_commands.push(SuggestedCommandName {
+                            name: command_name,
+                            levenshtein_distance,
+                        });
+                    }
+                }
             }
         }
 
@@ -282,7 +388,7 @@ fn fetch_single_command<'a, H: BuildHasher>(
             let command = command.options();
 
             if !command.help_available {
-                return Some(CustomisedHelpData::NoCommandFound {
+                return Ok(CustomisedHelpData::NoCommandFound {
                     help_error_message: &help_options.no_help_available_text,
                 });
             }
@@ -295,7 +401,9 @@ fn fetch_single_command<'a, H: BuildHasher>(
                 &help_options.dm_and_guild_text
             };
 
-            return Some(CustomisedHelpData::SingleCommand {
+            similar_commands.sort_unstable_by(|a, b| a.levenshtein_distance.cmp(&b.levenshtein_distance));
+
+            return Ok(CustomisedHelpData::SingleCommand {
                 command: Command {
                     name: command_name,
                     description: command.desc.clone(),
@@ -303,12 +411,15 @@ fn fetch_single_command<'a, H: BuildHasher>(
                     aliases: command.aliases.clone(),
                     availability: available_text,
                     usage: command.usage.clone(),
+                    usage_sample: command.example.clone(),
                 },
             });
         }
     }
 
-    None
+    similar_commands.sort_unstable_by(|a, b| a.levenshtein_distance.cmp(&b.levenshtein_distance));
+
+    Err(similar_commands)
 }
 
 /// Tries to extract a single command matching searched command name.
@@ -382,26 +493,17 @@ fn create_command_group_commands_pair_from_groups<'a, H: BuildHasher>(
 
     for group_name in group_names {
         let group = &groups[&**group_name];
-        let commands = remove_aliases(&group.commands);
-        let mut command_names = commands.keys().collect::<Vec<_>>();
-        command_names.sort();
 
-        let mut group_with_cmds = fetch_all_eligible_commands_in_group(
+        let group_with_cmds = create_single_group(
             config,
-            &commands,
-            &command_names,
-            &help_options,
+            group,
+            group_name,
             &msg,
+            &help_options,
         );
 
-        group_with_cmds.name = group_name;
-
-        if let Some(ref prefixes) = group.prefixes {
-            group_with_cmds.prefixes.extend_from_slice(&prefixes);
-        }
-
-        if group_with_cmds.command_names.is_empty() {
-            continue;
+        if !group_with_cmds.command_names.is_empty() {
+            listed_groups.push(group_with_cmds);
         }
 
         listed_groups.push(group_with_cmds);
@@ -410,25 +512,88 @@ fn create_command_group_commands_pair_from_groups<'a, H: BuildHasher>(
     listed_groups
 }
 
+/// Fetches a single group with its commands.
+fn create_single_group<'a>(
+    config: &Configuration,
+    group: &CommandGroup,
+    group_name: &'a str,
+    msg: &Message,
+    help_options: &'a HelpOptions,
+) -> GroupCommandsPair<'a> {
+let commands = remove_aliases(&group.commands);
+    let mut command_names = commands.keys().collect::<Vec<_>>();
+    command_names.sort();
+
+    let mut group_with_cmds = fetch_all_eligible_commands_in_group(
+        config,
+        &commands,
+        &command_names,
+        &help_options,
+        &msg,
+    );
+
+    group_with_cmds.name = group_name;
+
+    if let Some(ref prefixes) = group.prefixes {
+        group_with_cmds.prefixes.extend_from_slice(&prefixes);
+    }
+
+    group_with_cmds
+}
+
 /// Iterates over all commands and forges them into a `CustomisedHelpData`
 /// taking `HelpOptions` into consideration when deciding on whether a command
 /// shall be picked and in what textual format.
 pub fn create_customised_help_data<'a, H: BuildHasher>(
     config: &Configuration,
     groups: &'a HashMap<String, Arc<CommandGroup>, H>,
-    args: &Args,
+    args: &'a Args,
     help_options: &'a HelpOptions,
     msg: &Message,
 ) -> CustomisedHelpData<'a> {
     if !args.is_empty() {
         let name = args.full();
 
-        return if let Some(result) = fetch_single_command(&groups, &name, &help_options, &msg) {
-            result
-        } else {
-            CustomisedHelpData::NoCommandFound {
-                help_error_message: &help_options.no_help_available_text,
-            }
+        return match fetch_single_command(&groups, &name, &help_options, &msg) {
+            Ok(single_command) => single_command,
+            Err(suggestions) => {
+                let searched_named_lowercase = name.to_lowercase();
+
+                for (key, group) in groups {
+
+                    if key.to_lowercase() == searched_named_lowercase
+                        || group.prefixes.as_ref()
+                            .map_or(false, |v| v.iter().any(|prefix|
+                            *prefix == searched_named_lowercase)) {
+
+                        let mut single_group = create_single_group(
+                            config,
+                            &group,
+                            &key,
+                            &msg,
+                            &help_options
+                        );
+
+                        if !single_group.command_names.is_empty() {
+                            return CustomisedHelpData::GroupedCommands {
+                                help_description: group.description.clone().unwrap_or_default(),
+                                groups: vec![single_group],
+                            };
+                        }
+                    }
+                }
+
+                if suggestions.is_empty() {
+                    CustomisedHelpData::NoCommandFound {
+                        help_error_message: &help_options.no_help_available_text,
+                    }
+                } else {
+                    CustomisedHelpData::SuggestedCommands {
+                        help_description: help_options.suggestion_text.clone(),
+                        suggestions: Suggestions(suggestions),
+                    }
+                }
+            },
         };
     }
 
@@ -513,8 +678,14 @@ fn send_single_command_embed(
                 embed = embed.description(desc);
             }
 
-            if let &Some(ref usage_sample) = &command.usage {
-                embed = embed.field(&help_options.usage_label, usage_sample, true);
+            if let &Some(ref usage) = &command.usage {
+                embed = embed.field(&help_options.usage_label, usage, true);
+            }
+
+            if let Some(ref usage_sample) = command.usage_sample {
+                let value = format!("`{} {}`", command.name, usage_sample);
+
+                embed = embed.field(&help_options.usage_sample_label, value, true);
             }
 
             embed = embed.field(&help_options.grouped_label, command.group_name, true);
@@ -539,7 +710,7 @@ fn send_suggestion_embed(
     suggestions: &Suggestions,
     colour: Colour,
 ) -> Result<Message, Error> {
-    let text = format!("{}: `{}`", help_description, suggestions.join("`, `"));
+    let text = format!("{}", help_description.replace("{}", &suggestions.join("`, `")));
 
     channel_id.send_message(|m| m.embed(|e| e.colour(colour).description(text)))
 }
@@ -636,7 +807,7 @@ fn grouped_commands_to_plain_string(
     result
 }
 
-/// Turns a single into a `String` taking plain help format into account.
+/// Turns a single command into a `String` taking plain help format into account.
 fn single_command_to_plain_string(help_options: &HelpOptions, command: &Command) -> String {
     let mut result = String::default();
     let _ = writeln!(result, "**{}**", command.name);
@@ -648,6 +819,14 @@ fn single_command_to_plain_string(help_options: &HelpOptions, command: &Command)
     if let &Some(ref description) = &command.description {
         let _ = writeln!(result, "**{}**: {}", help_options.description_label, description);
     };
+
+    if let &Some(ref usage) = &command.usage {
+        let _ = writeln!(result, "**{}**: {}", help_options.usage_label, usage);
+    }
+
+    if let &Some(ref usage_sample) = &command.usage_sample {
+        let _ = writeln!(result, "**{}**: `{} {}`", help_options.usage_sample_label, command.name, usage_sample);
+    }
 
     let _ = writeln!(result, "**{}**: {}", help_options.grouped_label, command.group_name);
     let _ = writeln!(result, "**{}**: {}", help_options.available_text, command.availability);
@@ -701,4 +880,85 @@ pub fn plain<H: BuildHasher>(
     };
 
     Ok(())
+}
+
+
+#[cfg(test)]
+mod levenshtein_tests {
+    use super::levenshtein_distance;
+
+    #[test]
+    fn reflexive() {
+        let word_a = "rusty ferris";
+        let word_b = "rusty ferris";
+        assert_eq!(0, levenshtein_distance(&word_a, &word_b));
+
+        let word_a = "";
+        let word_b = "";
+        assert_eq!(0, levenshtein_distance(&word_a, &word_b));
+
+        let word_a = "rusty ferris";
+        let word_b = "RuSty FerriS";
+        assert_eq!(4, levenshtein_distance(&word_a, &word_b));
+    }
+
+    #[test]
+    fn symmetric() {
+        let word_a = "ferris";
+        let word_b = "rusty ferris";
+        assert_eq!(6, levenshtein_distance(&word_a, &word_b));
+
+        let word_a = "rusty ferris";
+        let word_b = "ferris";
+        assert_eq!(6, levenshtein_distance(&word_a, &word_b));
+
+        let word_a = "";
+        let word_b = "ferris";
+        assert_eq!(6, levenshtein_distance(&word_a, &word_b));
+
+        let word_a = "ferris";
+        let word_b = "";
+        assert_eq!(6, levenshtein_distance(&word_a, &word_b));
+    }
+
+    #[test]
+    fn transitive() {
+        let word_a = "ferris";
+        let word_b = "turbo fish";
+        let word_c = "unsafe";
+
+        let distance_of_a_c = levenshtein_distance(&word_a, &word_c);
+        let distance_of_a_b = levenshtein_distance(&word_a, &word_b);
+        let distance_of_b_c = levenshtein_distance(&word_b, &word_c);
+
+        assert!(distance_of_a_c <= (distance_of_a_b + distance_of_b_c));
+    }
+}
+
+#[cfg(test)]
+mod matrix_tests {
+    use super::Matrix;
+
+    #[test]
+    fn index_mut() {
+        let mut matrix = Matrix::new(5, 5);
+        assert_eq!(matrix[(1, 1)], 0);
+
+        matrix[(1, 1)] = 10;
+        assert_eq!(matrix[(1, 1)], 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "the len is 4 but the index is 9")]
+    fn panic_index_too_high() {
+        let matrix = Matrix::new(2, 2);
+        matrix[(3, 3)];
+    }
+
+    #[test]
+    #[should_panic(expected = "the len is 0 but the index is 0")]
+    fn panic_indexing_when_empty() {
+        let matrix = Matrix::new(0, 0);
+        matrix[(0, 0)];
+    }
 }

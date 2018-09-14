@@ -149,6 +149,11 @@ fn main() {
                 // Some arguments require a `{}` in order to replace it with contextual information.
                 // In this case our `{}` refers to a command's name.
                 .command_not_found_text("Could not find: `{}`.")
+                // Define the maximum Levenshtein-distance between a searched command-name
+                // and commands. If the distance is lower than or equal the set distance,
+                // it will be displayed as a suggestion.
+                // Setting the distance to 0 will disable suggestions.
+                .max_levenshtein_distance(3)
                 // On another note, you can set up the help-menu-filter-behaviour.
                 // Here are all possible settings shown on all possible options.
                 // First case is if a user lacks permissions for a command, we can hide the command.
@@ -172,6 +177,9 @@ fn main() {
             // This requires us to call commands in this group
             // via `~emoji` (or `~e`) instead of just `~`.
             .prefixes(vec!["emoji", "em"])
+            // Set a description to appear if a user wants to display a single group
+            // e.g. via help using the group-name or one of its prefixes.
+            .desc("A group with commands providing an emoji as response.")
             // Sets a command that will be executed if only a group-prefix was passed.
             .default_cmd(bird)
             .command("cat", |c| c

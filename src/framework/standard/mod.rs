@@ -1187,15 +1187,14 @@ impl Framework for StandardFramework {
             }
         }
 
-        if !dispatch_unrecognised {
-            return;
-        }
+        if !(self.configuration.ignore_bots && message.author.bot) {
 
-        if let &Some(ref unrecognised_command) = &self.unrecognised_command {
-            let unrecognised_command = unrecognised_command.clone();
-            threadpool.execute(move || {
-                (unrecognised_command)(&mut context, &message, &unrecognised_command_name);
-            });
+            if let &Some(ref unrecognised_command) = &self.unrecognised_command {
+                let unrecognised_command = unrecognised_command.clone();
+                threadpool.execute(move || {
+                    (unrecognised_command)(&mut context, &message, &unrecognised_command_name);
+                });
+            }
         }
     }
 

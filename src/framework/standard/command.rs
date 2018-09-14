@@ -108,6 +108,7 @@ pub struct CommandGroup {
     /// will short-circuit on the first check that returns `false`.
     pub checks: Vec<Check>,
     pub default_command: Option<CommandOrAlias>,
+    pub description: Option<String>,
 }
 
 impl Default for CommandGroup {
@@ -125,6 +126,7 @@ impl Default for CommandGroup {
             help: None,
             checks: Vec::new(),
             default_command: None,
+            description: None,
         }
     }
 }
@@ -221,6 +223,8 @@ pub struct HelpOptions {
     pub embed_error_colour: Colour,
     /// Colour help-embed will use if no error occured.
     pub embed_success_colour: Colour,
+    /// If not 0, help will check whether a command is similar to searched named.
+    pub max_levenshtein_distance: usize,
 }
 
 pub trait HelpCommand: Send + Sync + 'static {
@@ -240,7 +244,7 @@ impl HelpCommand for Arc<HelpCommand> {
 impl Default for HelpOptions {
     fn default() -> HelpOptions {
         HelpOptions {
-            suggestion_text: "Did you mean {}?".to_string(),
+            suggestion_text: "Did you mean `{}`?".to_string(),
             no_help_available_text: "**Error**: No help available.".to_string(),
             usage_label: "Usage".to_string(),
             usage_sample_label: "Sample usage".to_string(),
@@ -264,6 +268,7 @@ impl Default for HelpOptions {
             wrong_channel: HelpBehaviour::Strike,
             embed_error_colour: Colour::DARK_RED,
             embed_success_colour: Colour::ROSEWATER,
+            max_levenshtein_distance: 0,
         }
     }
 }
