@@ -505,8 +505,6 @@ fn create_command_group_commands_pair_from_groups<'a, H: BuildHasher>(
         if !group_with_cmds.command_names.is_empty() {
             listed_groups.push(group_with_cmds);
         }
-
-        listed_groups.push(group_with_cmds);
     }
 
     listed_groups

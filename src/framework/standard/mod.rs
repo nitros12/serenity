@@ -1187,6 +1187,10 @@ impl Framework for StandardFramework {
             }
         }
 
+        if !dispatch_unrecognised {
+            return;
+        }
+
         if !(self.configuration.ignore_bots && message.author.bot) {
 
             if let &Some(ref unrecognised_command) = &self.unrecognised_command {
