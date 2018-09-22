@@ -352,12 +352,8 @@ impl Message {
     }
 
     /// True if message was sent using direct messages.
-    #[cfg(feature = "cache")]
     pub fn is_private(&self) -> bool {
-        match CACHE.read().channel(self.channel_id) {
-            Some(Channel::Group(_)) | Some(Channel::Private(_)) => true,
-            _ => false,
-        }
+        self.guild_id.is_none()
     }
 
     /// Retrieves a clone of the author's Member instance, if this message was
@@ -407,10 +403,12 @@ impl Message {
     pub fn pin(&self) -> Result<()> {
         #[cfg(feature = "cache")]
         {
-            let req = Permissions::MANAGE_MESSAGES;
+            if self.guild_id.is_some() {
+                let req = Permissions::MANAGE_MESSAGES;
 
-            if !utils::user_has_perms(self.channel_id, req)? {
-                return Err(Error::Model(ModelError::InvalidPermissions(req)));
+                if !utils::user_has_perms(self.channel_id, req)? {
+                    return Err(Error::Model(ModelError::InvalidPermissions(req)));
+                }
             }
         }
 
@@ -440,10 +438,12 @@ impl Message {
     fn _react(&self, reaction_type: &ReactionType) -> Result<()> {
         #[cfg(feature = "cache")]
         {
-            let req = Permissions::ADD_REACTIONS;
+            if self.guild_id.is_some() {
+                let req = Permissions::ADD_REACTIONS;
 
-            if !utils::user_has_perms(self.channel_id, req)? {
-                return Err(Error::Model(ModelError::InvalidPermissions(req)));
+                if !utils::user_has_perms(self.channel_id, req)? {
+                    return Err(Error::Model(ModelError::InvalidPermissions(req)));
+                }
             }
         }
 
@@ -479,10 +479,12 @@ impl Message {
 
         #[cfg(feature = "cache")]
         {
-            let req = Permissions::SEND_MESSAGES;
+            if self.guild_id.is_some() {
+                let req = Permissions::SEND_MESSAGES;
 
-            if !utils::user_has_perms(self.channel_id, req)? {
-                return Err(Error::Model(ModelError::InvalidPermissions(req)));
+                if !utils::user_has_perms(self.channel_id, req)? {
+                    return Err(Error::Model(ModelError::InvalidPermissions(req)));
+                }
             }
         }
 
@@ -532,10 +534,12 @@ impl Message {
     pub fn unpin(&self) -> Result<()> {
         #[cfg(feature = "cache")]
         {
-            let req = Permissions::MANAGE_MESSAGES;
+            if self.guild_id.is_some() {
+                let req = Permissions::MANAGE_MESSAGES;
 
-            if !utils::user_has_perms(self.channel_id, req)? {
-                return Err(Error::Model(ModelError::InvalidPermissions(req)));
+                if !utils::user_has_perms(self.channel_id, req)? {
+                    return Err(Error::Model(ModelError::InvalidPermissions(req)));
+                }
             }
         }
 
