@@ -555,7 +555,7 @@ impl Message {
         self.guild_id.as_ref().and_then(|guild_id| self.author.nick_in(*guild_id))
     }
 
-    pub(crate) fn check_content_length(map: &JsonMap) -> Result<()> {
+    pub fn check_content_length(map: &JsonMap) -> Result<()> {
         if let Some(content) = map.get("content") {
             if let Value::String(ref content) = *content {
                 if let Some(length_over) = Message::overflow_length(content) {
