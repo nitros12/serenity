@@ -25,20 +25,31 @@ use std::time::Duration;
 #[cfg(feature = "cache")]
 use super::CACHE;
 
+#[cfg(feature = "cache")]
+lazy_static! {
+    pub static ref CACHE_TRY_WRITE_DURATION: Option<Duration> =
+        CACHE.read().get_try_write_duration();
+}
+
 macro_rules! update {
     ($event:expr) => {
         {
             #[cfg(feature = "cache")]
             {
-                if let Some(mut lock) = CACHE.try_write_for(Duration::from_millis(10)) {
-                    lock.update(&mut $event)
-                } else {
-                    warn!(
-                        "[dispatch] Possible deadlock: couldn't unlock cache to update with event: {:?}",
-                        $event,
-                    );
-
-                    None
+                match *CACHE_TRY_WRITE_DURATION {
+                    Some(duration) => {
+                        if let Some(mut lock) = CACHE.try_write_for(duration) {
+                            lock.update(&mut $event)
+                        } else {
+                            warn!(
+                                "[dispatch] Possible deadlock: couldn't unlock cache to update with event: {:?}",
+                                $event,
+                            );
+                            None
+                        }},
+                    None => {
+                        CACHE.write().update(&mut $event)
+                    },
                 }
             }
         }
@@ -167,7 +178,7 @@ fn handle_event<H: EventHandler + Send + Sync + 'static>(
             let context = context(data, runner_tx, shard_id);
 
             // Discord sends both a MessageCreate and a ChannelCreate upon a new message in a private channel.
-            // This could potentionally be annoying to handle when otherwise wanting to normally take care of a new channel.
+            // This could potentially be annoying to handle when otherwise wanting to normally take care of a new channel.
             // So therefore, private channels are dispatched to their own handler code.
             match event.channel {
                 Channel::Private(channel) => {

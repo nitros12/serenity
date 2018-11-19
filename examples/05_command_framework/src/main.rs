@@ -13,17 +13,18 @@
 extern crate serenity;
 extern crate typemap;
 
-use serenity::client::bridge::gateway::{ShardId, ShardManager};
-use serenity::framework::standard::{Args, DispatchError, StandardFramework, HelpBehaviour, CommandOptions, help_commands};
-use serenity::model::channel::Message;
-use serenity::model::gateway::Ready;
-use serenity::model::Permissions;
-use serenity::prelude::Mutex;
-use serenity::prelude::*;
-use std::collections::HashMap;
-use std::env;
-use std::fmt::Write;
-use std::sync::Arc;
+use std::{collections::HashMap, env, fmt::Write, sync::Arc};
+
+use serenity::{
+    client::bridge::gateway::{ShardId, ShardManager},
+    framework::standard::{
+        help_commands, Args, CommandOptions, DispatchError, HelpBehaviour, StandardFramework,
+    },
+    model::{channel::Message, gateway::Ready, Permissions},
+    prelude::*,
+    utils::{content_safe, ContentSafeOptions},
+};
+
 use typemap::Key;
 
 // A container type is created for inserting into the Client's `data`, which
@@ -81,6 +82,9 @@ fn main() {
             .allow_whitespace(true)
             .on_mention(true)
             .prefix("~")
+            // A command that will be executed
+            // if nothing but a prefix is passed.
+            .prefix_only_cmd(about)
             // You can set multiple delimiters via delimiters()
             // or just one via delimiter(",")
             // If you set multiple delimiters, the order you list them
@@ -107,7 +111,7 @@ fn main() {
             // the command's name does not exist in the counter, add a default
             // value of 0.
             let mut data = ctx.data.lock();
-            let counter = data.get_mut::<CommandCounter>().unwrap();
+            let counter = data.get_mut::<CommandCounter>().expect("Expected CommandCounter in ShareMap.");
             let entry = counter.entry(command_name.to_string()).or_insert(0);
             *entry += 1;
 
@@ -125,6 +129,10 @@ fn main() {
         // command could not be found.
         .unrecognised_command(|_, _, unknown_command_name| {
             println!("Could not find command named '{}'", unknown_command_name);
+        })
+        // Set a function that's called whenever a message is not a command.
+        .message_without_command(|_, message| {
+            println!("Message is not a command '{}'", message.content);
         })
         // Set a function that's called whenever a command's execution didn't complete for one
         // reason or another. For example, when a user has exceeded a rate-limit or a command
@@ -172,6 +180,10 @@ fn main() {
             // Make this command use the "complicated" bucket.
             .bucket("complicated")
             .cmd(commands))
+        // Command that will repeat passed arguments and remove user and
+        // role mentions with safe alternative.
+        .command("say", |c| c
+            .cmd(say))
         .group("Emoji", |g| g
             // Sets multiple prefixes for a group.
             // This requires us to call commands in this group
@@ -236,13 +248,39 @@ command!(commands(ctx, msg, _args) {
     let mut contents = "Commands used:\n".to_string();
 
     let data = ctx.data.lock();
-    let counter = data.get::<CommandCounter>().unwrap();
+    let counter = data.get::<CommandCounter>().expect("Expected CommandCounter in ShareMap.");
 
     for (k, v) in counter {
         let _ = write!(contents, "- {name}: {amount}\n", name=k, amount=v);
     }
 
     if let Err(why) = msg.channel_id.say(&contents) {
+        println!("Error sending message: {:?}", why);
+    }
+});
+
+// Repeats what the user passed as argument but ensures that user and role
+// mentions are replaced with a safe textual alternative.
+// In this example channel mentions are excluded via the `ContentSafeOptions`.
+command!(say(_ctx, msg, args) {
+    let mut settings = if let Some(guild_id) = msg.guild_id {
+       // By default roles, users, and channel mentions are cleaned.
+       ContentSafeOptions::default()
+            // We do not want to clean channal mentions as they
+            // do not ping users.
+            .clean_channel(false)
+            // If it's a guild channel, we want mentioned users to be displayed
+            // as their display name.
+            .display_as_member_from(guild_id)
+    } else {
+        ContentSafeOptions::default()
+            .clean_channel(false)
+            .clean_role(false)
+    };
+
+    let mut content = content_safe(&args.full(), &settings);
+
+    if let Err(why) = msg.channel_id.say(&content) {
         println!("Error sending message: {:?}", why);
     }
 });
@@ -320,8 +358,8 @@ command!(about_role(_ctx, msg, args) {
 //
 // Argument type overloading is currently not supported.
 command!(multiply(_ctx, msg, args) {
-    let first = args.single::<f64>().unwrap();
-    let second = args.single::<f64>().unwrap();
+    let first = args.single::<f64>()?;
+    let second = args.single::<f64>()?;
 
     let res = first * second;
 

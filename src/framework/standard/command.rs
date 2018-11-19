@@ -62,6 +62,7 @@ impl HelpCommand for Help {
 pub type BeforeHook = Fn(&mut Context, &Message, &str) -> bool + Send + Sync + 'static;
 pub type AfterHook = Fn(&mut Context, &Message, &str, Result<(), Error>) + Send + Sync + 'static;
 pub type UnrecognisedCommandHook = Fn(&mut Context, &Message, &str) + Send + Sync + 'static;
+pub type MessageWithoutCommandHook = Fn(&mut Context, &Message) + Send + Sync + 'static;
 pub(crate) type InternalCommand = Arc<Command>;
 // pub type PrefixCheck = Fn(&mut Context, &Message) -> Option<String> + Send + Sync + 'static;
 pub type MultiPrefixCheck = Fn(&mut Context, &Message) -> Option<Arc<RwLock<Vec<String>>>> + Send + Sync + 'static;
@@ -84,7 +85,7 @@ impl fmt::Debug for CommandOrAlias {
 #[derive(Clone, Debug)]
 pub struct Error(pub String);
 
-// TODO: Have seperate `From<(&)String>` and `From<&str>` impls via specialization
+// TODO: Have separate `From<(&)String>` and `From<&str>` impls via specialization
 impl<D: fmt::Display> From<D> for Error {
     fn from(d: D) -> Self {
         Error(d.to_string())
@@ -102,6 +103,7 @@ pub struct CommandGroup {
     pub help_available: bool,
     pub dm_only: bool,
     pub guild_only: bool,
+    pub owner_privileges: bool,
     pub owners_only: bool,
     pub help: Option<Arc<Help>>,
     /// A set of checks to be called prior to executing the command-group. The checks
@@ -120,6 +122,7 @@ impl Default for CommandGroup {
             required_permissions: Permissions::empty(),
             dm_only: false,
             guild_only: false,
+            owner_privileges: true,
             help_available: true,
             owners_only: false,
             allowed_roles: Vec::new(),
@@ -144,7 +147,7 @@ pub struct CommandOptions {
     pub example: Option<String>,
     /// Command usage schema, used by other commands.
     pub usage: Option<String>,
-    /// Minumum amount of arguments that should be passed.
+    /// Minimum amount of arguments that should be passed.
     pub min_args: Option<i32>,
     /// Maximum amount of arguments that can be passed.
     pub max_args: Option<i32>,
@@ -158,6 +161,8 @@ pub struct CommandOptions {
     pub dm_only: bool,
     /// Whether command can be used only in guilds or not.
     pub guild_only: bool,
+    /// Whether the command treats owners as normal users.
+    pub owner_privileges: bool,
     /// Whether command can only be used by owners or not.
     pub owners_only: bool,
     /// Other names that can be used to call this command instead.
@@ -221,7 +226,7 @@ pub struct HelpOptions {
     pub wrong_channel: HelpBehaviour,
     /// Colour help-embed will use upon encountering an error.
     pub embed_error_colour: Colour,
-    /// Colour help-embed will use if no error occured.
+    /// Colour help-embed will use if no error occurred.
     pub embed_success_colour: Colour,
     /// If not 0, help will check whether a command is similar to searched named.
     pub max_levenshtein_distance: usize,
@@ -341,6 +346,7 @@ impl Default for CommandOptions {
             required_permissions: Permissions::empty(),
             dm_only: false,
             guild_only: false,
+            owner_privileges: true,
             help_available: true,
             owners_only: false,
             allowed_roles: Vec::new(),
@@ -388,7 +394,8 @@ pub fn positions(ctx: &mut Context, msg: &Message, conf: &Configuration) -> Opti
 
             // If the above do not fill `positions`, then that means no kind of prefix was present.
             // Check if a no-prefix-execution is applicable.
-            if conf.no_dm_prefix && private && positions.is_empty() {
+            if conf.no_dm_prefix && private && positions.is_empty() &&
+            !(conf.ignore_bots && msg.author.bot) {
                 positions.push(0);
             }
         }

@@ -10,8 +10,7 @@ use std::{
     sync::Arc,
 };
 use parking_lot::RwLock;
-// use super::command::PrefixCheck;
-use super::command::MultiPrefixCheck;
+use super::command::{Command, InternalCommand, MultiPrefixCheck};
 
 /// The configuration to use for a [`StandardFramework`] associated with a [`Client`]
 /// instance.
@@ -62,6 +61,7 @@ pub struct Configuration {
     #[doc(hidden)] pub no_dm_prefix: bool,
     #[doc(hidden)] pub delimiters: Vec<String>,
     #[doc(hidden)] pub case_insensitive: bool,
+    #[doc(hidden)] pub prefix_only_cmd: Option<InternalCommand>,
 }
 
 impl Configuration {
@@ -451,7 +451,7 @@ impl Configuration {
     ///
     /// # Examples
     ///
-    /// Have the args be seperated by a comma and a space:
+    /// Have the args be separated by a comma and a space:
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;
@@ -478,7 +478,7 @@ impl Configuration {
     ///
     /// # Examples
     ///
-    /// Have the args be seperated by a comma and a space; and a regular space:
+    /// Have the args be separated by a comma and a space; and a regular space:
     ///
     /// ```rust,no_run
     /// # use serenity::prelude::*;
@@ -511,6 +511,15 @@ impl Configuration {
     /// **Note**: Defaults to `false`.
     pub fn case_insensitivity(mut self, cs: bool) -> Self {
         self.case_insensitive = cs;
+
+        self
+    }
+
+    /// Sets a command to dispatch if user's input is a prefix only.
+    ///
+    /// **Note**: Defaults to no command and ignores prefix only.
+    pub fn prefix_only_cmd<C: Command + 'static>(mut self, c: C) -> Self {
+        self.prefix_only_cmd = Some(Arc::new(c));
 
         self
     }
@@ -553,6 +562,7 @@ impl Default for Configuration {
             on_mention: None,
             owners: HashSet::default(),
             prefixes: vec![],
+            prefix_only_cmd: None,
         }
     }
 }

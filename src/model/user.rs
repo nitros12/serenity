@@ -612,7 +612,7 @@ impl User {
     ///
     /// # Examples
     ///
-    /// If maintaing a very long-running bot, you may want to periodically
+    /// If maintaining a very long-running bot, you may want to periodically
     /// refresh information about certain users if the state becomes
     /// out-of-sync:
     ///
@@ -712,6 +712,29 @@ impl User {
     /// ```
     #[inline]
     pub fn tag(&self) -> String { tag(&self.name, self.discriminator) }
+
+    /// Returns the user's nickname in the given `guild_id`.
+    ///
+    /// If none is used, it returns `None`.
+    #[inline]
+    pub fn nick_in<G>(&self, guild_id: G) -> Option<String>
+    where G: Into<GuildId> {
+        self._nick_in(guild_id.into())
+    }
+
+    fn _nick_in(&self, guild_id: GuildId) -> Option<String> {
+        #[cfg(feature = "cache")]
+        {
+            guild_id.to_guild_cached().and_then(|guild| {
+                guild.read().members.get(&self.id).and_then(|member| member.nick.clone())
+            })
+        }
+
+        #[cfg(not(feature = "cache"))]
+        {
+            guild_id.member(&self.id).and_then(|member| member.nick.clone())
+        }
+    }
 }
 
 impl fmt::Display for User {

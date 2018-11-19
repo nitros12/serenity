@@ -46,7 +46,8 @@ impl CreateGroup {
             .dm_only(self.0.dm_only)
             .guild_only(self.0.guild_only)
             .help_available(self.0.help_available)
-            .owners_only(self.0.owners_only);
+            .owners_only(self.0.owners_only)
+            .owner_privileges(self.0.owner_privileges);
 
         if let Some(ref bucket) = self.0.bucket {
             cmd = cmd.bucket(bucket);
@@ -60,19 +61,19 @@ impl CreateGroup {
         where F: FnOnce(CreateCommand) -> CreateCommand {
         let cmd = f(self.build_command()).finish();
 
-        for n in &cmd.options().aliases {
+        for alias in &cmd.options().aliases {
 
             if let Some(ref prefixes) = self.0.prefixes {
 
                 for prefix in prefixes {
                     self.0.commands.insert(
-                        format!("{} {}", prefix, n.to_string()),
+                        format!("{} {}", prefix, alias.to_string()),
                         CommandOrAlias::Alias(format!("{} {}", prefix, command_name.to_string())),
                     );
                 }
             } else {
                 self.0.commands.insert(
-                    n.to_string(),
+                    alias.to_string(),
                     CommandOrAlias::Alias(command_name.to_string()),
                 );
             }
@@ -98,6 +99,24 @@ impl CreateGroup {
     /// [`on`]: #method.on
     pub fn cmd<C: Command + 'static>(mut self, name: &str, c: C) -> Self {
         let cmd: Arc<Command> = Arc::new(c);
+
+        for alias in &cmd.options().aliases {
+
+            if let Some(ref prefixes) = self.0.prefixes {
+
+                for prefix in prefixes {
+                    self.0.commands.insert(
+                        format!("{} {}", prefix, alias.to_string()),
+                        CommandOrAlias::Alias(format!("{} {}", prefix, name.to_string())),
+                    );
+                }
+            } else {
+                self.0.commands.insert(
+                    alias.to_string(),
+                    CommandOrAlias::Alias(name.to_string()),
+                );
+            }
+        }
 
         self.0
             .commands
@@ -154,6 +173,14 @@ impl CreateGroup {
         self
     }
 
+    /// Whether owners shall bypass buckets, missing permissions,
+    /// wrong channels, missing roles, and checks.
+    pub fn owner_privileges(mut self, owner_privileges: bool) -> Self {
+        self.0.owner_privileges = owner_privileges;
+
+        self
+    }
+
     /// Whether command should be displayed in help list or not, used by other commands.
     pub fn help_available(mut self, help_available: bool) -> Self {
         self.0.help_available = help_available;
@@ -202,11 +229,11 @@ impl CreateGroup {
     /// Adds a command for a group that will be executed if no command-name
     /// has been passed.
     pub fn default_cmd<C: Command + 'static>(mut self, c: C) -> Self {
-        let cmd: Arc<Command> = Arc::new(c);
+        c.init();
 
-        self.0.default_command = Some(CommandOrAlias::Command(Arc::clone(&cmd)));
-
-        cmd.init();
+        let cmd_with_group_options = self.build_command().cmd(c).finish();
+        let cmd_finished = CommandOrAlias::Command(cmd_with_group_options);
+        self.0.default_command = Some(cmd_finished);
 
         self
     }
