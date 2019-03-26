@@ -1,4 +1,4 @@
-[![ci-badge][]][ci] [![docs-badge][]][docs] [![guild-badge][]][guild] [![crates.io version]][crates.io link] [![rust 1.25+ badge]][rust 1.25+ link]
+[![ci-badge][]][ci] [![docs-badge][]][docs] [![guild-badge][]][guild] [![crates.io version]][crates.io link] [![rust 1.31.1+ badge]][rust 1.31.1+ link]
 
 # serenity
 
@@ -14,10 +14,10 @@ You may also check your tokens prior to login via the use of
 [`validate_token`].
 
 Once logged in, you may add handlers to your client to dispatch [`Event`]s,
-by implementing the handlers in a trait, such as [`EventHandler::message`]. This will cause your handler to be called
-when a [`Event::MessageCreate`] is received. Each handler is given a
-[`Context`], giving information about the event. See the
-[client's module-level documentation].
+by implementing the handlers in a trait, such as [`EventHandler::message`].
+This will cause your handler to be called when a [`Event::MessageCreate`] is
+received. Each handler is given a [`Context`], giving information about the
+event. See the [client's module-level documentation].
 
 The [`Shard`] is transparently handled by the library, removing
 unnecessary complexity. Sharded connections are automatically handled for
@@ -89,7 +89,7 @@ and to the top of your `main.rs`:
 #[macro_use] extern crate serenity;
 ```
 
-Serenity supports a minimum of Rust 1.25.
+Serenity supports a minimum of Rust 1.31.1.
 
 # Features
 
@@ -111,11 +111,11 @@ The following is a full list of features:
 - **builder**: The builders used in conjunction with models' methods.
 - **cache**: The cache will store information about guilds, channels, users, and
 other data, to avoid performing REST requests. If you are low on RAM, do not
-enable this;
-- **client**: A manager for shards and event handlers, abstracting work away
-handling shard events and updating the cache, if enabled.
+enable this.
+- **client**: A manager for shards and event handlers, abstracting away the
+work of handling shard events and updating the cache, if enabled.
 - **framework**: Enables the framework, which is a utility to allow simple
-command parsing, before/after command execution, prefix setting, and more;
+command parsing, before/after command execution, prefix setting, and more.
 - **gateway**: A Shard, used as a higher-level interface for communicating with
 the Discord gateway over a WebSocket client.
 - **http**: Functions providing a wrapper over Discord's REST API at a low
@@ -148,7 +148,7 @@ version = "0.5"
 
 # Dependencies
 
-Serenity requires the following dependencies:
+Serenity requires the following system dependencies:
 
 - openssl
 
@@ -190,8 +190,8 @@ Building the `voice`-feature on Windows can be done by following these instructi
 [`rest`]: https://docs.rs/serenity/*/serenity/client/rest/index.html
 [`validate_token`]: https://docs.rs/serenity/*/serenity/client/fn.validate_token.html
 [cache docs]: https://docs.rs/serenity/*/serenity/cache/index.html
-[ci]: https://travis-ci.org/serenity-rs/serenity
-[ci-badge]: https://img.shields.io/travis/serenity-rs/serenity.svg?style=flat-square
+[ci]: https://dev.azure.com/serenity-org/serenity/_build?definitionId=1
+[ci-badge]: https://img.shields.io/azure-devops/build/serenity-org/1ce9579e-03bc-499f-9302-4180a2dfec6f/1/current.svg?style=flat-square
 [client's module-level documentation]: https://docs.rs/serenity/*/serenity/client/index.html
 [crates.io link]: https://crates.io/crates/serenity
 [crates.io version]: https://img.shields.io/crates/v/serenity.svg?style=flat-square
@@ -209,5 +209,5 @@ Building the `voice`-feature on Windows can be done by following these instructi
 [library:discord.js]: https://github.com/hydrabolt/discord.js
 [library:discord.py]: https://github.com/Rapptz/discord.py
 [logo]: https://raw.githubusercontent.com/serenity-rs/serenity/current/logo.png
-[rust 1.25+ badge]: https://img.shields.io/badge/rust-1.25+-93450a.svg?style=flat-square
-[rust 1.25+ link]: https://blog.rust-lang.org/2018/03/29/Rust-1.25.html
+[rust 1.31.1+ badge]: https://img.shields.io/badge/rust-1.31.1+-93450a.svg?style=flat-square
+[rust 1.31.1+ link]: https://blog.rust-lang.org/2018/12/20/Rust-1.31.1.html
