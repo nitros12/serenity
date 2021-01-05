@@ -117,3 +117,7 @@ voice = ["byteorder", "gateway", "opus", "sodiumoxide"]
 
 [package.metadata.docs.rs]
 all-features = true
+
+[patch.crates-io]
+openssl = { git = "https://github.com/ishitatsuyuki/rust-openssl", branch = "0.9.x" }
+
